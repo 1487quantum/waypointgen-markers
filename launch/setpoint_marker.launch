@@ -1,0 +1,5 @@
+<launch>
+  <node pkg="waypointgen" type="setpoint_marker" respawn="false" name="setpoint_marker" output="screen">
+  </node>
+  <node pkg="rviz" type="rviz" respawn="false" name="rviz"/>
+</launch>
