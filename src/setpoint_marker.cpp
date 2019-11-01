@@ -2,7 +2,7 @@
 #include <ros/ros.h>
 #include <interactive_markers/interactive_marker_server.h>
 #include <interactive_markers/menu_handler.h>
-
+#include <visualization_msgs/InteractiveMarkerInit.h>
 
 using namespace visualization_msgs;
 using namespace interactive_markers;
@@ -12,15 +12,35 @@ boost::shared_ptr<InteractiveMarkerServer> server;
 //Marker
 float marker_pos = 0;
 unsigned char marker_id = 0; //Take a max value of 255 waypoints
-std::list<std::string> marker_list;
+std::list<InteractiveMarker> marker_list;
 
 //Menu
 MenuHandler menu_handler;
 bool menuInit = false;
 
+//Subscriber
+ros::Subscriber sub_setpoint_list;
+
 //Fx declaration
 void mnu_addNewWaypoint(const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback);
 void addWaypoint(unsigned int mrk_id);
+
+//Subscriber callback
+void setpointListCallback(const visualization_msgs::InteractiveMarkerInitConstPtr msg){
+  std_msgs::String a;
+  for(auto mk:msg->markers){
+    a.data=mk.name;
+    a.data+=": ";
+    a.data+=std::to_string(mk.pose.position.x);
+    a.data+=",";
+    a.data+=std::to_string(mk.pose.position.y);
+    a.data+=",";
+    a.data+=std::to_string(mk.pose.orientation.z);
+
+    ROS_INFO_STREAM(a.data.c_str());
+  }
+
+}
 
 //Menu callback actions
 void processFeedback(const InteractiveMarkerFeedbackConstPtr &feedback )
@@ -69,7 +89,7 @@ void mnu_removeWaypoint(const visualization_msgs::InteractiveMarkerFeedbackConst
     server->applyChanges();
 
     //Remove from list
-    marker_list.remove(feedback->marker_name);
+    //marker_list.remove( feedback->marker_name);
 
     dispMsg.data=feedback->marker_name;
     dispMsg.data+=" removed!";
@@ -82,14 +102,20 @@ void mnu_removeWaypoint(const visualization_msgs::InteractiveMarkerFeedbackConst
 
 void mnu_createList(const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback){
   std_msgs::String dispMsg;
+
   dispMsg.data = std::to_string(marker_list.size());
   ROS_INFO("marker_list len -> %s\n===========",dispMsg.data.c_str());
-  for (std::list<std::string>::iterator it = marker_list.begin(); it != marker_list.end(); ++it)
+  for (std::list<InteractiveMarker>::iterator it = marker_list.begin(); it != marker_list.end(); ++it)
   {
-    dispMsg.data= (*it);
-    ROS_INFO("%s",dispMsg.data.c_str());
-  }
+    dispMsg.data= it->name;
 
+    //ROS_INFO("%s",dispMsg.data.c_str());
+  }
+  server->applyChanges(); //Update the interactive marker ist before saving the data
+
+  //Call sub once to get update values
+  ros::NodeHandle n;
+  sub_setpoint_list= n.subscribe("setpoint_marker/update_full", 10, setpointListCallback);
 }
 
 void deepCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
@@ -158,7 +184,6 @@ void addControls(InteractiveMarker i_mk, unsigned char mrk_id){
   i_mk.controls.push_back(addMovementControl(imc,1,0,1,0,"rotate_z",false));   //Rotate about Z-axis
 
   //MENU
-
   if(!menuInit){
     //Create menu at start if it does not exist
     //Entries
@@ -210,24 +235,22 @@ void addWaypoint(unsigned int mrk_id){
   mrk.pose.position.x=marker_id%5 - 2;
   mrk.pose.position.y=marker_id%6 - 2;
 
-  marker_list.push_back(mrk.name); //Add to list
+  marker_list.push_back(mrk); //Add to list
 
   //Add CONTROLS
   addControls(mrk,mrk_id);
 
   //Update map_server
   server->applyChanges();
-
 }
 
 
 int main(int argc, char** argv)
 {
-  ros::init(argc, argv, "simple_marker");
+  ros::init(argc, argv, "setpoint_marker");
+  server.reset( new InteractiveMarkerServer("setpoint_marker","",false) );
 
-  server.reset( new InteractiveMarkerServer("simple_marker","",false) );
-
-  //Add waypoint
+  //Add waypoint at start
   addWaypoint(marker_id);
 
   // start the ROS main loop
