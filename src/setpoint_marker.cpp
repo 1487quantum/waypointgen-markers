@@ -52,7 +52,7 @@ void processFeedback(const InteractiveMarkerFeedbackConstPtr &feedback )
 void mnu_getLocation(const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback ){
   std_msgs::String dispMsg; //To display on console
   dispMsg.data=feedback->marker_name;
-  dispMsg.data+=": ";
+  dispMsg.data+="[x,y,ang]: ";
   dispMsg.data+=std::to_string(feedback->pose.position.x);
   dispMsg.data+=",";
   dispMsg.data+=std::to_string(feedback->pose.position.y);
@@ -113,25 +113,6 @@ void mnu_createList(const visualization_msgs::InteractiveMarkerFeedbackConstPtr 
   sub_setpoint_list = n.subscribe("setpoint_marker/update_full", 10, setpointListCallback);
 }
 
-void deepCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
-{
-  std_msgs::String dispMsg; //To display on console
-  std::string markerName = feedback->marker_name;
-
-  dispMsg.data ="Got ID: ";
-  dispMsg.data+= markerName;
-
-  //Delimit to the end to get id
-  std::string delimiter = "_";
-  std::string markerID = markerName.substr(markerName.find(delimiter)+1, -1); // Get last part of string, since name is waypoint_[ID]
-  dispMsg.data+= "\n";
-  dispMsg.data+=markerID;
-  dispMsg.data+=",";
-  dispMsg.data+=std::to_string(feedback->pose.position.x);
-
-  //Get Position
-  ROS_INFO("%s\n",dispMsg.data.c_str());
-}
 /*
 Create waypoint
 */
