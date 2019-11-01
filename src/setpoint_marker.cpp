@@ -10,9 +10,8 @@ using namespace interactive_markers;
 boost::shared_ptr<InteractiveMarkerServer> server;
 
 //Marker
-float marker_pos = 0;
 unsigned char marker_id = 0; //Take a max value of 255 waypoints
-std::list<InteractiveMarker> marker_list;
+unsigned char marker_count = 0; //Keep track of number of waypoints created
 
 //Menu
 MenuHandler menu_handler;
@@ -66,9 +65,9 @@ void mnu_getLocation(const visualization_msgs::InteractiveMarkerFeedbackConstPtr
 
 //Add waypoint
 void mnu_addNewWaypoint(const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback ){
-  ROS_INFO("Waypoint Added!");
-  if(marker_list.size()<256){
+  if(marker_id<256){
     addWaypoint(++marker_id);
+    ROS_INFO("Waypoint Added!");
   }else{
     ROS_INFO("Setpoint limit reached!");
   }
@@ -83,13 +82,13 @@ void mnu_removeWaypoint(const visualization_msgs::InteractiveMarkerFeedbackConst
   std::string delimiter = "_";
   int markerID = stoi(markerName.substr(markerName.find(delimiter)+1, -1)); // Get last part of string, since name is waypoint_[ID]; Convert str->int
 
-  if(marker_list.size()>1){
+  if(marker_count>1){
     //Remove from server
     server->erase(feedback->marker_name);
     server->applyChanges();
 
-    //Remove from list
-    //marker_list.remove( feedback->marker_name);
+    //Decrement counter
+    marker_count -=1;
 
     dispMsg.data=feedback->marker_name;
     dispMsg.data+=" removed!";
@@ -103,19 +102,15 @@ void mnu_removeWaypoint(const visualization_msgs::InteractiveMarkerFeedbackConst
 void mnu_createList(const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback){
   std_msgs::String dispMsg;
 
-  dispMsg.data = std::to_string(marker_list.size());
-  ROS_INFO("marker_list len -> %s\n===========",dispMsg.data.c_str());
-  for (std::list<InteractiveMarker>::iterator it = marker_list.begin(); it != marker_list.end(); ++it)
-  {
-    dispMsg.data= it->name;
+  dispMsg.data = std::to_string(marker_count);
+  ROS_INFO("\n===================================\nGenerating list...\n===================================\nWaypoint Count -> %s",dispMsg.data.c_str());
 
-    //ROS_INFO("%s",dispMsg.data.c_str());
-  }
   server->applyChanges(); //Update the interactive marker ist before saving the data
 
-  //Call sub once to get update values
+  //Subscriber
   ros::NodeHandle n;
-  sub_setpoint_list= n.subscribe("setpoint_marker/update_full", 10, setpointListCallback);
+  //Call sub once to get update values
+  sub_setpoint_list = n.subscribe("setpoint_marker/update_full", 10, setpointListCallback);
 }
 
 void deepCb( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
@@ -152,7 +147,6 @@ Marker makeArrow(unsigned char mrk_id){
   sp_marker.color.g = 1.0;
   sp_marker.color.b = 0.2;
   sp_marker.color.a = 1.0;
-  //marker_list.push_back(sp_marker);
   return sp_marker;
 }
 
@@ -235,10 +229,11 @@ void addWaypoint(unsigned int mrk_id){
   mrk.pose.position.x=marker_id%5 - 2;
   mrk.pose.position.y=marker_id%6 - 2;
 
-  marker_list.push_back(mrk); //Add to list
-
   //Add CONTROLS
   addControls(mrk,mrk_id);
+
+  //Increment marker count tracker
+  marker_count+=1;
 
   //Update map_server
   server->applyChanges();
