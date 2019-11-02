@@ -1,8 +1,10 @@
 #include <std_msgs/String.h>
+
 #include <ros/ros.h>
 #include <interactive_markers/interactive_marker_server.h>
 #include <interactive_markers/menu_handler.h>
 #include <visualization_msgs/InteractiveMarkerInit.h>
+#include <geometry_msgs/PoseWithCovarianceStamped.h>
 
 using namespace visualization_msgs;
 using namespace interactive_markers;
@@ -13,31 +15,55 @@ boost::shared_ptr<InteractiveMarkerServer> server;
 unsigned char marker_id = 0; //Take a max value of 255 waypoints
 unsigned char marker_count = 0; //Keep track of number of waypoints created
 
-//Menu
-MenuHandler menu_handler;
-bool menuInit = false;
+//List
+std::list<geometry_msgs::PoseWithCovariance> wl;
 
 //Subscriber
 ros::Subscriber sub_setpoint_list;
+
+//Menu
+MenuHandler menu_handler;
+bool menuInit = false;
 
 //Fx declaration
 void mnu_addNewWaypoint(const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback);
 void addWaypoint(unsigned int mrk_id);
 
+
+geometry_msgs::PoseWithCovariance createPose(double cx,double cy,double cang){
+  geometry_msgs::PoseWithCovariance wpoint;
+  wpoint.pose.position.x = cx;
+  wpoint.pose.position.y = cy;
+  wpoint.pose.position.z = 0;
+  wpoint.pose.orientation.x = 0;
+  wpoint.pose.orientation.y = 0;
+  wpoint.pose.orientation.z = cang;
+  return wpoint;
+}
+
 //Subscriber callback
 void setpointListCallback(const visualization_msgs::InteractiveMarkerInitConstPtr msg){
   std_msgs::String a;
+  geometry_msgs::PoseWithCovariance pt;
+  wl.clear(); //Clear list for new data
+
   for(auto mk:msg->markers){
+    pt = createPose(mk.pose.position.x,mk.pose.position.y,mk.pose.orientation.z);
+    wl.push_front(pt);
+
+    //Print
     a.data=mk.name;
     a.data+=": ";
-    a.data+=std::to_string(mk.pose.position.x);
+    a.data+=std::to_string(pt.pose.position.x);
     a.data+=",";
-    a.data+=std::to_string(mk.pose.position.y);
+    a.data+=std::to_string(pt.pose.position.y);
     a.data+=",";
-    a.data+=std::to_string(mk.pose.orientation.z);
+    a.data+=std::to_string(pt.pose.orientation.z);
 
     ROS_INFO_STREAM(a.data.c_str());
-  }
+
+}
+
 
 }
 
@@ -52,7 +78,7 @@ void processFeedback(const InteractiveMarkerFeedbackConstPtr &feedback )
 void mnu_getLocation(const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback ){
   std_msgs::String dispMsg; //To display on console
   dispMsg.data=feedback->marker_name;
-  dispMsg.data+="[x,y,ang]: ";
+  dispMsg.data+=": ";
   dispMsg.data+=std::to_string(feedback->pose.position.x);
   dispMsg.data+=",";
   dispMsg.data+=std::to_string(feedback->pose.position.y);
@@ -110,7 +136,16 @@ void mnu_createList(const visualization_msgs::InteractiveMarkerFeedbackConstPtr 
   //Subscriber
   ros::NodeHandle n;
   //Call sub once to get update values
-  sub_setpoint_list = n.subscribe("setpoint_marker/update_full", 10, setpointListCallback);
+ sub_setpoint_list = n.subscribe("setpoint_marker/update_full", 10, setpointListCallback);
+
+//ToDo: (Bug) Fix the Need to generate the list twice at start to get the list of waypoints
+  std::list <geometry_msgs::PoseWithCovariance> :: iterator it;
+  for(it = wl.begin(); it != wl.end(); ++it){
+    std_msgs::String msgT;
+    msgT.data = std::to_string(it->pose.position.x);
+    ROS_INFO(msgT.data.c_str());
+  }
+
 }
 
 /*
@@ -229,6 +264,7 @@ int main(int argc, char** argv)
   //Add waypoint at start
   addWaypoint(marker_id);
 
+  server->applyChanges();
   // start the ROS main loop
   ros::spin();
   server.reset();
