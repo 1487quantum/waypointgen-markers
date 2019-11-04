@@ -6,6 +6,8 @@
 #include <visualization_msgs/InteractiveMarkerInit.h>
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
 
+#define DEBUG 0
+
 using namespace visualization_msgs;
 using namespace interactive_markers;
 
@@ -41,30 +43,52 @@ geometry_msgs::PoseWithCovariance createPose(double cx,double cy,double cang){
   return wpoint;
 }
 
+void updateWaypointPos( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+{
+
+  if( feedback->event_type==visualization_msgs::InteractiveMarkerFeedback::MOUSE_UP){
+    //Update marker position when user releases marker
+    if(DEBUG){
+      std::ostringstream s;
+
+      ROS_INFO_STREAM( s.str() << "[MOUSE_UP] " << feedback->marker_name << ": pose changed"
+      << "\nposition = "
+      << feedback->pose.position.x
+      << ", " << feedback->pose.position.y
+      << ", " << feedback->pose.position.z
+      << "\norientation = "
+      << feedback->pose.orientation.w
+      << ", " << feedback->pose.orientation.x
+      << ", " << feedback->pose.orientation.y
+      << ", " << feedback->pose.orientation.z
+      << "\nframe: " << feedback->header.frame_id);
+      // << " time: " << feedback->header.stamp.sec << "sec, "
+      // << feedback->header.stamp.nsec << " nsec" );
+    }
+    server->applyChanges();
+  }
+}
+
 //Subscriber callback
 void setpointListCallback(const visualization_msgs::InteractiveMarkerInitConstPtr msg){
   std_msgs::String a;
   geometry_msgs::PoseWithCovariance pt;
   wl.clear(); //Clear list for new data
-
   for(auto mk:msg->markers){
+    server->applyChanges(); //Update waypoint list
+    //Create pose
     pt = createPose(mk.pose.position.x,mk.pose.position.y,mk.pose.orientation.z);
     wl.push_front(pt);
+    if(DEBUG){
+      std::ostringstream a;
 
-    //Print
-    a.data=mk.name;
-    a.data+=": ";
-    a.data+=std::to_string(pt.pose.position.x);
-    a.data+=",";
-    a.data+=std::to_string(pt.pose.position.y);
-    a.data+=",";
-    a.data+=std::to_string(pt.pose.orientation.z);
-
-    ROS_INFO_STREAM(a.data.c_str());
-
-}
-
-
+      ROS_INFO_STREAM(a.str()<<"[SUB CALLBACK] "
+      <<mk.name<<": "
+      <<pt.pose.position.x<<", "
+      <<pt.pose.position.y<<", "
+      <<pt.pose.orientation.z);
+    }
+  }
 }
 
 //Menu callback actions
@@ -133,24 +157,23 @@ void mnu_createList(const visualization_msgs::InteractiveMarkerFeedbackConstPtr 
 
   server->applyChanges(); //Update the interactive marker ist before saving the data
 
-  //Subscriber
-  ros::NodeHandle n;
-  //Call sub once to get update values
- sub_setpoint_list = n.subscribe("setpoint_marker/update_full", 10, setpointListCallback);
-
-//ToDo: (Bug) Fix the Need to generate the list twice at start to get the list of waypoints
+  //Get updated waypoint list
   std::list <geometry_msgs::PoseWithCovariance> :: iterator it;
   for(it = wl.begin(); it != wl.end(); ++it){
     std_msgs::String msgT;
     msgT.data = std::to_string(it->pose.position.x);
+    msgT.data += ", ";
+    msgT.data += std::to_string(it->pose.position.y);
+    msgT.data += ", ";
+    msgT.data += std::to_string(it->pose.orientation.z);
     ROS_INFO(msgT.data.c_str());
   }
-
 }
 
 /*
 Create waypoint
 */
+
 //Create Arrow
 Marker makeArrow(unsigned char mrk_id){
   // create a green arrow
@@ -179,6 +202,7 @@ InteractiveMarkerControl addMovementControl(InteractiveMarkerControl im_c,bool m
   im_c.orientation.y = my;
   im_c.orientation.z = mz;
   im_c.name = mName;
+  //Set either translational or rotational
   im_c.interaction_mode = mvAxis?InteractiveMarkerControl::MOVE_AXIS:InteractiveMarkerControl::ROTATE_AXIS;
   return im_c;
 }
@@ -227,8 +251,9 @@ void addControls(InteractiveMarker i_mk, unsigned char mrk_id){
   i_mk.controls.push_back( imc );
 
   server->insert(i_mk);
-  menu_handler.apply( *server, i_mk.name); //Apply to int_marker.name, which is setpoint_marker
+  server->setCallback(i_mk.name, &updateWaypointPos); //Attach callback when user updates the marker position
 
+  menu_handler.apply( *server, i_mk.name); //Apply to int_marker.name, which is setpoint_marker
 }
 
 void addWaypoint(unsigned int mrk_id){
@@ -264,7 +289,11 @@ int main(int argc, char** argv)
   //Add waypoint at start
   addWaypoint(marker_id);
 
-  server->applyChanges();
+  //Subscriber
+  ros::NodeHandle n;
+  //Subscribe to the waypoints published
+  sub_setpoint_list = n.subscribe("setpoint_marker/update_full", 1, setpointListCallback);
+
   // start the ROS main loop
   ros::spin();
   server.reset();
