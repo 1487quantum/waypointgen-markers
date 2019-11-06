@@ -5,9 +5,16 @@
 #include <interactive_markers/menu_handler.h>
 #include <visualization_msgs/InteractiveMarkerInit.h>
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
+#include <tf/transform_listener.h>
+
+#include <stdlib.h>
+#include <ctime>
+#include <yaml-cpp/yaml.h>
+#include <fstream>
 
 #define DEBUG 0
 
+using namespace std;
 using namespace visualization_msgs;
 using namespace interactive_markers;
 
@@ -18,7 +25,7 @@ unsigned char marker_id = 0; //Take a max value of 255 waypoints
 unsigned char marker_count = 0; //Keep track of number of waypoints created
 
 //List
-std::list<geometry_msgs::PoseWithCovariance> wl;
+list<geometry_msgs::PoseWithCovariance> wl;
 
 //Subscriber
 ros::Subscriber sub_setpoint_list;
@@ -31,6 +38,25 @@ bool menuInit = false;
 void mnu_addNewWaypoint(const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback);
 void addWaypoint(unsigned int mrk_id);
 
+//Add zero infront if less than 10
+string addZero(int a){
+  string res;
+  if(a<10){
+    res = "0";
+  }
+  res+=to_string(a);
+  return res;
+}
+
+//Get current time
+string getCurrentTime(){
+  time_t now = time(0);
+  tm *ltm = localtime(&now);  //tm -> timestruct
+  //dMMYYYY_hhmmss
+  string timenow  = addZero(ltm->tm_mday) +  std::to_string(1 + ltm->tm_mon) + std::to_string(1900 + ltm->tm_year)+"_";
+  timenow += addZero(ltm->tm_hour)+addZero(ltm->tm_min)+addZero(ltm->tm_sec);
+  return timenow;
+}
 
 geometry_msgs::PoseWithCovariance createPose(double cx,double cy,double cang){
   geometry_msgs::PoseWithCovariance wpoint;
@@ -49,21 +75,10 @@ void updateWaypointPos( const visualization_msgs::InteractiveMarkerFeedbackConst
   if( feedback->event_type==visualization_msgs::InteractiveMarkerFeedback::MOUSE_UP){
     //Update marker position when user releases marker
     if(DEBUG){
-      std::ostringstream s;
-
-      ROS_INFO_STREAM( s.str() << "[MOUSE_UP] " << feedback->marker_name << ": pose changed"
-      << "\nposition = "
-      << feedback->pose.position.x
-      << ", " << feedback->pose.position.y
-      << ", " << feedback->pose.position.z
-      << "\norientation = "
-      << feedback->pose.orientation.w
-      << ", " << feedback->pose.orientation.x
-      << ", " << feedback->pose.orientation.y
-      << ", " << feedback->pose.orientation.z
-      << "\nframe: " << feedback->header.frame_id);
-      // << " time: " << feedback->header.stamp.sec << "sec, "
-      // << feedback->header.stamp.nsec << " nsec" );
+      ROS_INFO("[MOUSE_UP] %s: \nframe: %s\nPos: %f, %f, %f\nOrient: %f, %f, %f",
+      feedback->marker_name.c_str(),feedback->header.frame_id.c_str(),
+      feedback->pose.position.x, feedback->pose.position.y, feedback->pose.position.z,
+      feedback->pose.orientation.x,feedback->pose.orientation.y,feedback->pose.orientation.z);
     }
     server->applyChanges();
   }
@@ -80,13 +95,8 @@ void setpointListCallback(const visualization_msgs::InteractiveMarkerInitConstPt
     pt = createPose(mk.pose.position.x,mk.pose.position.y,mk.pose.orientation.z);
     wl.push_front(pt);
     if(DEBUG){
-      std::ostringstream a;
-
-      ROS_INFO_STREAM(a.str()<<"[SUB CALLBACK] "
-      <<mk.name<<": "
-      <<pt.pose.position.x<<", "
-      <<pt.pose.position.y<<", "
-      <<pt.pose.orientation.z);
+      ROS_INFO("[SUB CALLBACK] %s: %f, %f, %f",mk.name.c_str(),
+      pt.pose.position.x, pt.pose.position.y, pt.pose.orientation.z);
     }
   }
 }
@@ -99,18 +109,11 @@ void processFeedback(const InteractiveMarkerFeedbackConstPtr &feedback )
   << ", " << feedback->pose.orientation.w );
 }
 
+//Show selected waypoint Location
 void mnu_getLocation(const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback ){
-  std_msgs::String dispMsg; //To display on console
-  dispMsg.data=feedback->marker_name;
-  dispMsg.data+=": ";
-  dispMsg.data+=std::to_string(feedback->pose.position.x);
-  dispMsg.data+=",";
-  dispMsg.data+=std::to_string(feedback->pose.position.y);
-  dispMsg.data+=",";
-  dispMsg.data+=std::to_string(feedback->pose.orientation.w);
-
-  //Show Location
-  ROS_INFO("%s",dispMsg.data.c_str());
+  //ostringstream dispMsg; //To display on console
+  ROS_INFO("[LOC] %s: %f,%f,%f",feedback->marker_name.c_str(),
+  feedback->pose.position.x ,feedback->pose.position.y,feedback->pose.orientation.z);
 }
 
 //Add waypoint
@@ -126,10 +129,10 @@ void mnu_addNewWaypoint(const visualization_msgs::InteractiveMarkerFeedbackConst
 //Remove waypoint_
 void mnu_removeWaypoint(const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback){
   std_msgs::String dispMsg; //To display on console
-  std::string markerName = feedback->marker_name; //Marker Name
+  string markerName = feedback->marker_name; //Marker Name
 
   //Delimit to the end to get id
-  std::string delimiter = "_";
+  string delimiter = "_";
   int markerID = stoi(markerName.substr(markerName.find(delimiter)+1, -1)); // Get last part of string, since name is waypoint_[ID]; Convert str->int
 
   if(marker_count>1){
@@ -150,24 +153,55 @@ void mnu_removeWaypoint(const visualization_msgs::InteractiveMarkerFeedbackConst
 }
 
 void mnu_createList(const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback){
-  std_msgs::String dispMsg;
-
-  dispMsg.data = std::to_string(marker_count);
-  ROS_INFO("\n===================================\nGenerating list...\n===================================\nWaypoint Count -> %s",dispMsg.data.c_str());
+  //   std_msgs::String dispMsg;
+  // dispMsg.data = to_string(marker_count);
+  ROS_INFO("\n===================================\nGenerating list...\n===================================\nWaypoint Count -> %i",marker_count);
 
   server->applyChanges(); //Update the interactive marker ist before saving the data
 
+  //Save as YAML file
+  YAML::Node pts;
+
   //Get updated waypoint list
-  std::list <geometry_msgs::PoseWithCovariance> :: iterator it;
+  list <geometry_msgs::PoseWithCovariance> :: iterator it;
+  int idx=0;
   for(it = wl.begin(); it != wl.end(); ++it){
     std_msgs::String msgT;
-    msgT.data = std::to_string(it->pose.position.x);
+
+    msgT.data = "P"+to_string(idx);
     msgT.data += ", ";
-    msgT.data += std::to_string(it->pose.position.y);
+    msgT.data += to_string(it->pose.position.x);
     msgT.data += ", ";
-    msgT.data += std::to_string(it->pose.orientation.z);
-    ROS_INFO(msgT.data.c_str());
+    msgT.data += to_string(it->pose.position.y);
+    msgT.data += ", ";
+    msgT.data += to_string(it->pose.orientation.z);
+
+    //Add to YAML list
+    pts["Waypoints"].push_back(msgT.data.c_str());  // node["seq"] automatically becomes a sequence
+
+    if(DEBUG){
+      //Show on console
+      ROS_INFO(msgT.data.c_str());
+    }
+
+    idx++;//Increment counter
   }
+
+  //${ROS_PACKAGE_PATH%%:*} -> Get workspace src path
+  //Go to package diretory to save the file
+  //system(" pwd && cd ${ROS_PACKAGE_PATH%%:*}/waypointgen && pwd");
+
+  //Currently saves to .ros DIRECTORY
+  fstream exportlist;
+  string loc = getCurrentTime();
+  loc+="_wplist.yaml";
+  ROS_INFO("Writing waypoint list to %s", loc.c_str());
+  exportlist.open(loc,fstream::out);
+
+  exportlist << pts;
+  exportlist.close();
+  ROS_INFO_STREAM("Saved to : " << loc);
+
 }
 
 /*
@@ -196,7 +230,7 @@ MARKER CONTROLS
 */
 //Add motion controls (To modify waypoint position and orientation)
 //mvAxis: 0->Rotate, 1:Translate;
-InteractiveMarkerControl addMovementControl(InteractiveMarkerControl im_c,bool mw,bool mx,bool my,bool mz,std::string mName, bool mvAxis){
+InteractiveMarkerControl addMovementControl(InteractiveMarkerControl im_c,bool mw,bool mx,bool my,bool mz,string mName, bool mvAxis){
   im_c.orientation.w = mw;
   im_c.orientation.x = mx;
   im_c.orientation.y = my;
@@ -238,7 +272,7 @@ void addControls(InteractiveMarker i_mk, unsigned char mrk_id){
     //Generate list of waypoints
     entry_generateYAML =  menu_handler.insert( "Generate Waypoint List" , &mnu_createList );
 
-    menuInit=true;
+    menuInit=true;  //Make it true so that the menu only initializes once
   }
 
   imc.interaction_mode = InteractiveMarkerControl::BUTTON;
@@ -259,13 +293,13 @@ void addControls(InteractiveMarker i_mk, unsigned char mrk_id){
 void addWaypoint(unsigned int mrk_id){
   InteractiveMarker mrk;
   //Header
-  mrk.header.frame_id = "base_link";
+  mrk.header.frame_id = "map";    //Set frame relative to map frame
   mrk.header.stamp=ros::Time::now();
   //Name
   mrk.name = "waypoint_";
-  mrk.name += std::to_string(mrk_id);   //Add marker ID
+  mrk.name += to_string(mrk_id);   //Add marker ID
   mrk.description = "Waypoint Marker ";
-  mrk.description += std::to_string(mrk_id);
+  mrk.description += to_string(mrk_id);
   //locations (Vary spawn location)
   mrk.pose.position.x=marker_id%5 - 2;
   mrk.pose.position.y=marker_id%6 - 2;
@@ -286,6 +320,8 @@ int main(int argc, char** argv)
   ros::init(argc, argv, "setpoint_marker");
   server.reset( new InteractiveMarkerServer("setpoint_marker","",false) );
 
+  tf::TransformListener listener_map;
+
   //Add waypoint at start
   addWaypoint(marker_id);
 
@@ -294,7 +330,22 @@ int main(int argc, char** argv)
   //Subscribe to the waypoints published
   sub_setpoint_list = n.subscribe("setpoint_marker/update_full", 1, setpointListCallback);
 
+  //TF listener
+  tf::StampedTransform transform;
+  try{
+    listener_map.lookupTransform("map", "/base_link",
+    ros::Time(0), transform);
+  }
+  catch (tf::TransformException ex){
+    ROS_ERROR("%s",ex.what());
+    ros::Duration(1.0).sleep();
+  }
+
+  //ROS_INFO("%f",transform.getOrigin().x());
+  //rate.sleep();
+
   // start the ROS main loop
+
   ros::spin();
   server.reset();
 }
