@@ -37,6 +37,7 @@ bool menuInit = false;
 //Fx declaration
 void mnu_addNewWaypoint(const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback);
 void addWaypoint(unsigned int mrk_id);
+InteractiveMarkerControl addMovementControl(InteractiveMarkerControl im_c,bool mw,bool mx,bool my,bool mz,string mName, bool mvAxis);
 
 //Add zero infront if less than 10
 string addZero(int a){
@@ -86,7 +87,6 @@ void updateWaypointPos( const visualization_msgs::InteractiveMarkerFeedbackConst
 
 //Subscriber callback
 void setpointListCallback(const visualization_msgs::InteractiveMarkerInitConstPtr msg){
-  std_msgs::String a;
   geometry_msgs::PoseWithCovariance pt;
   wl.clear(); //Clear list for new data
   for(auto mk:msg->markers){
@@ -99,14 +99,6 @@ void setpointListCallback(const visualization_msgs::InteractiveMarkerInitConstPt
       pt.pose.position.x, pt.pose.position.y, pt.pose.orientation.z);
     }
   }
-}
-
-//Menu callback actions
-void processFeedback(const InteractiveMarkerFeedbackConstPtr &feedback )
-{
-  ROS_INFO_STREAM( feedback->marker_name << " is now at "
-  << feedback->pose.position.x << ", " << feedback->pose.position.y
-  << ", " << feedback->pose.orientation.w );
 }
 
 //Show selected waypoint Location
@@ -155,7 +147,7 @@ void mnu_removeWaypoint(const visualization_msgs::InteractiveMarkerFeedbackConst
 void mnu_createList(const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback){
   //   std_msgs::String dispMsg;
   // dispMsg.data = to_string(marker_count);
-  ROS_INFO("\n===================================\nGenerating list...\n===================================\nWaypoint Count -> %i",marker_count);
+  ROS_INFO("%s %i","[Generating list] Waypoint Count ->",marker_count);
 
   server->applyChanges(); //Update the interactive marker ist before saving the data
 
@@ -181,15 +173,10 @@ void mnu_createList(const visualization_msgs::InteractiveMarkerFeedbackConstPtr 
 
     if(DEBUG){
       //Show on console
-      ROS_INFO(msgT.data.c_str());
+      ROS_INFO("%s",msgT.data.c_str());
     }
-
     idx++;//Increment counter
   }
-
-  //${ROS_PACKAGE_PATH%%:*} -> Get workspace src path
-  //Go to package diretory to save the file
-  //system(" pwd && cd ${ROS_PACKAGE_PATH%%:*}/waypointgen && pwd");
 
   //Currently saves to .ros DIRECTORY
   fstream exportlist;
@@ -200,7 +187,7 @@ void mnu_createList(const visualization_msgs::InteractiveMarkerFeedbackConstPtr 
 
   exportlist << pts;
   exportlist.close();
-  ROS_INFO_STREAM("Saved to : " << loc);
+  ROS_INFO_STREAM("Saved to : ~/.ros/" << loc);
 
 }
 
@@ -228,6 +215,37 @@ Marker makeArrow(unsigned char mrk_id){
 MARKER CONTROLS
 ====================
 */
+
+//Set InteractiveMarker Header
+InteractiveMarker setHeader(InteractiveMarker imk_h, int index_h){
+  //Header
+  imk_h.header.frame_id = "map";    //Set frame relative to map frame
+  imk_h.header.stamp=ros::Time::now();
+  //Name
+  imk_h.name = "waypoint_";
+  imk_h.name += to_string(index_h);   //Add marker ID
+  imk_h.description = "Waypoint Marker ";
+  imk_h.description += to_string(index_h);
+  return imk_h;
+}
+
+//Set InteractiveMarker position
+InteractiveMarker setPos(InteractiveMarker imk_h, int sx, int sy){
+  imk_h.pose.position.x= sx;
+  imk_h.pose.position.y= sy;
+  return imk_h;
+}
+
+//Add controls
+InteractiveMarker addMotionControl(InteractiveMarker i_mk, InteractiveMarkerControl imc_am){
+  //Position & Orientation
+  // add the control to the interactive marker
+  i_mk.controls.push_back(addMovementControl(imc_am,1,1,0,0,"move_x", true));  //Translate about X-axis
+  i_mk.controls.push_back(addMovementControl(imc_am,1,0,0,1,"move_y",true));  //Translate about Y-axis
+  i_mk.controls.push_back(addMovementControl(imc_am,1,0,1,0,"rotate_z",false));   //Rotate about Z-axis
+  return i_mk;
+}
+
 //Add motion controls (To modify waypoint position and orientation)
 //mvAxis: 0->Rotate, 1:Translate;
 InteractiveMarkerControl addMovementControl(InteractiveMarkerControl im_c,bool mw,bool mx,bool my,bool mz,string mName, bool mvAxis){
@@ -241,18 +259,9 @@ InteractiveMarkerControl addMovementControl(InteractiveMarkerControl im_c,bool m
   return im_c;
 }
 
-//Add controls
-void addControls(InteractiveMarker i_mk, unsigned char mrk_id){
-  InteractiveMarkerControl imc;
-
-  //Position & Orientation
-  // add the control to the interactive marker
-  i_mk.controls.push_back(addMovementControl(imc,1,1,0,0,"move_x", true));  //Translate about X-axis
-  i_mk.controls.push_back(addMovementControl(imc,1,0,0,1,"move_y",true));  //Translate about Y-axis
-  i_mk.controls.push_back(addMovementControl(imc,1,0,1,0,"rotate_z",false));   //Rotate about Z-axis
-
-  //MENU
-  if(!menuInit){
+//Add menu
+void addContextMnu(bool init){
+  if(!init){
     //Create menu at start if it does not exist
     //Entries
     MenuHandler::EntryHandle entry_showLoc;
@@ -274,38 +283,39 @@ void addControls(InteractiveMarker i_mk, unsigned char mrk_id){
 
     menuInit=true;  //Make it true so that the menu only initializes once
   }
+}
 
+InteractiveMarkerControl addIntCtrl(InteractiveMarkerControl imc, unsigned char mk_id){
   imc.interaction_mode = InteractiveMarkerControl::BUTTON;
   imc.always_visible = true;
 
-  //Add functions to control
+  //Add control waypoint function
   //Create Arrow (Visual)
-  imc.markers.push_back( makeArrow(mrk_id));
-  // add the control to the interactive marker
-  i_mk.controls.push_back( imc );
-
-  server->insert(i_mk);
-  server->setCallback(i_mk.name, &updateWaypointPos); //Attach callback when user updates the marker position
-
-  menu_handler.apply( *server, i_mk.name); //Apply to int_marker.name, which is setpoint_marker
+  imc.markers.push_back(makeArrow(mk_id));
+  return imc;
 }
 
 void addWaypoint(unsigned int mrk_id){
   InteractiveMarker mrk;
-  //Header
-  mrk.header.frame_id = "map";    //Set frame relative to map frame
-  mrk.header.stamp=ros::Time::now();
-  //Name
-  mrk.name = "waypoint_";
-  mrk.name += to_string(mrk_id);   //Add marker ID
-  mrk.description = "Waypoint Marker ";
-  mrk.description += to_string(mrk_id);
-  //locations (Vary spawn location)
-  mrk.pose.position.x=marker_id%5 - 2;
-  mrk.pose.position.y=marker_id%6 - 2;
+  InteractiveMarkerControl imc_m;
 
-  //Add CONTROLS
-  addControls(mrk,mrk_id);
+  //Set Header
+  mrk = setHeader(mrk,mrk_id);
+  //Vary spawn location
+  mrk = setPos(mrk,mrk_id%5 - 2,mrk_id%6 - 2);
+  //Add motion CONTROLS
+  mrk = addMotionControl(mrk,imc_m);
+  //Add MENU
+  addContextMnu(menuInit);
+  // Add the control to the interactive marker
+  imc_m = addIntCtrl(imc_m, mrk_id);
+  mrk.controls.push_back( imc_m);
+
+  //Insert into server
+  server->insert(mrk);
+  server->setCallback(mrk.name, &updateWaypointPos); //Attach callback when user updates the marker position
+
+  menu_handler.apply( *server, mrk.name); //Apply to int_marker.name, which is setpoint_marker
 
   //Increment marker count tracker
   marker_count+=1;
@@ -314,13 +324,10 @@ void addWaypoint(unsigned int mrk_id){
   server->applyChanges();
 }
 
-
 int main(int argc, char** argv)
 {
   ros::init(argc, argv, "setpoint_marker");
   server.reset( new InteractiveMarkerServer("setpoint_marker","",false) );
-
-  tf::TransformListener listener_map;
 
   //Add waypoint at start
   addWaypoint(marker_id);
@@ -330,22 +337,7 @@ int main(int argc, char** argv)
   //Subscribe to the waypoints published
   sub_setpoint_list = n.subscribe("setpoint_marker/update_full", 1, setpointListCallback);
 
-  //TF listener
-  tf::StampedTransform transform;
-  try{
-    listener_map.lookupTransform("map", "/base_link",
-    ros::Time(0), transform);
-  }
-  catch (tf::TransformException ex){
-    ROS_ERROR("%s",ex.what());
-    ros::Duration(1.0).sleep();
-  }
-
-  //ROS_INFO("%f",transform.getOrigin().x());
-  //rate.sleep();
-
   // start the ROS main loop
-
   ros::spin();
   server.reset();
 }
