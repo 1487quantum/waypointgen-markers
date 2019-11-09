@@ -1,18 +1,22 @@
 #include <std_msgs/String.h>
 
 #include <ros/ros.h>
+#include <ros/package.h>
+
+#include <boost/filesystem.hpp>
 #include <interactive_markers/interactive_marker_server.h>
 #include <interactive_markers/menu_handler.h>
 #include <visualization_msgs/InteractiveMarkerInit.h>
-#include <geometry_msgs/PoseWithCovarianceStamped.h>
-#include <tf/transform_listener.h>
+#include <geometry_msgs/PoseWithCovariance.h>
+#include <tf/tf.h>
 
+#include <map>
 #include <stdlib.h>
 #include <ctime>
 #include <yaml-cpp/yaml.h>
 #include <fstream>
 
-#define DEBUG 0
+#define DEBUG 1
 
 using namespace std;
 using namespace visualization_msgs;
@@ -24,8 +28,9 @@ boost::shared_ptr<InteractiveMarkerServer> server;
 unsigned char marker_id = 0; //Take a max value of 255 waypoints
 unsigned char marker_count = 0; //Keep track of number of waypoints created
 
-//List
-list<geometry_msgs::PoseWithCovariance> wl;
+typedef std::map<std::string,geometry_msgs::PoseWithCovariance> p_map;
+p_map wpl;
+
 
 //Subscriber
 ros::Subscriber sub_setpoint_list;
@@ -38,6 +43,9 @@ bool menuInit = false;
 void mnu_addNewWaypoint(const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback);
 void addWaypoint(unsigned int mrk_id);
 InteractiveMarkerControl addMovementControl(InteractiveMarkerControl im_c,bool mw,bool mx,bool my,bool mz,string mName, bool mvAxis);
+void updateWPList(p_map tmp);
+void updateWypt(p_map tmp, string wp_name, geometry_msgs::PoseWithCovariance pt);
+void printDebugPose(std::string dmsg, std::string wp_name, geometry_msgs::PoseWithCovariance pw);
 
 //Add zero infront if less than 10
 string addZero(int a){
@@ -59,14 +67,15 @@ string getCurrentTime(){
   return timenow;
 }
 
-geometry_msgs::PoseWithCovariance createPose(double cx,double cy,double cang){
+geometry_msgs::PoseWithCovariance createPose(double cx,double cy,tf::Quaternion q_rotate){
   geometry_msgs::PoseWithCovariance wpoint;
   wpoint.pose.position.x = cx;
   wpoint.pose.position.y = cy;
   wpoint.pose.position.z = 0;
-  wpoint.pose.orientation.x = 0;
-  wpoint.pose.orientation.y = 0;
-  wpoint.pose.orientation.z = cang;
+  wpoint.pose.orientation.x = q_rotate[0];
+  wpoint.pose.orientation.y = q_rotate[1];
+  wpoint.pose.orientation.z = q_rotate[2];
+  wpoint.pose.orientation.w = q_rotate[3];
   return wpoint;
 }
 
@@ -76,36 +85,87 @@ void updateWaypointPos( const visualization_msgs::InteractiveMarkerFeedbackConst
   if( feedback->event_type==visualization_msgs::InteractiveMarkerFeedback::MOUSE_UP){
     //Update marker position when user releases marker
     if(DEBUG){
-      ROS_INFO("[MOUSE_UP] %s: \nframe: %s\nPos: %f, %f, %f\nOrient: %f, %f, %f",
+      ROS_INFO("[MOUSE_UP] %s: \nframe: %s\nPos: %f, %f, %f\nOrient: %f, %f, %f, %f",
       feedback->marker_name.c_str(),feedback->header.frame_id.c_str(),
       feedback->pose.position.x, feedback->pose.position.y, feedback->pose.position.z,
-      feedback->pose.orientation.x,feedback->pose.orientation.y,feedback->pose.orientation.z);
+      feedback->pose.orientation.x,feedback->pose.orientation.y,feedback->pose.orientation.z,feedback->pose.orientation.w);
     }
+    //Update pose in map
+    geometry_msgs::PoseWithCovariance pwc;
+    pwc.pose.position.x=feedback->pose.position.x;
+    pwc.pose.position.y=feedback->pose.position.y;
+    pwc.pose.orientation.z=feedback->pose.orientation.z;
+    pwc.pose.orientation.w=feedback->pose.orientation.w;
+    updateWypt(wpl,feedback->marker_name,pwc);
+
     server->applyChanges();
   }
+}
+
+void printDebugPose(std::string dmsg, std::string wp_name, geometry_msgs::PoseWithCovariance pw){
+  tf::Quaternion q(pw.pose.orientation.x, pw.pose.orientation.y, pw.pose.orientation.z, pw.pose.orientation.w);
+  tf::Matrix3x3 m(q);
+  double roll, pitch, yaw;
+  m.getRPY(roll, pitch, yaw);
+  ROS_INFO("[%s] %s(x,y,ang) -> %f, %f, %f", dmsg.c_str(), wp_name.c_str(),pw.pose.position.x,pw.pose.position.y,yaw*180/3.1415927);
 }
 
 //Subscriber callback
 void setpointListCallback(const visualization_msgs::InteractiveMarkerInitConstPtr msg){
   geometry_msgs::PoseWithCovariance pt;
-  wl.clear(); //Clear list for new data
+
+  updateWPList(wpl);
   for(auto mk:msg->markers){
     server->applyChanges(); //Update waypoint list
+    //Create Quaternion for rotation
+    tf::Quaternion qtmp(mk.pose.orientation.x,mk.pose.orientation.y,mk.pose.orientation.z,mk.pose.orientation.w);
     //Create pose
-    pt = createPose(mk.pose.position.x,mk.pose.position.y,mk.pose.orientation.z);
-    wl.push_front(pt);
+    pt = createPose(mk.pose.position.x,mk.pose.position.y,qtmp);
+
+    //Add to map
+    updateWypt(wpl,mk.name,pt);
+
     if(DEBUG){
-      ROS_INFO("[SUB CALLBACK] %s: %f, %f, %f",mk.name.c_str(),
-      pt.pose.position.x, pt.pose.position.y, pt.pose.orientation.z);
+      printDebugPose("LIST SUB CALLBACK", mk.name, pt);
     }
+  }
+}
+
+void updateWPList(p_map tmp){
+  if(tmp.empty()){
+    ROS_INFO("Map is empty! Updating...");
+  }
+  p_map::iterator it = tmp.begin();
+  while(it != tmp.end())
+  {
+    std::cout<<it->first<<" :: "<<it->second<<std::endl;
+    it++;
+  }
+}
+
+//Add waypoint to map
+void updateWypt(p_map tmp, string wp_name, geometry_msgs::PoseWithCovariance pt){
+  bool id_exist = (wpl.insert(std::make_pair(wp_name,pt)).second == false);
+  if(id_exist){
+    ROS_WARN("Overwriting %s", wp_name.c_str());
+    wpl[wp_name]=pt;
+  }else{
+    if(DEBUG){
+      printDebugPose("INSRT WAYPONT", wp_name, pt);
+    }
+    wpl.insert(std::make_pair(wp_name,pt));
   }
 }
 
 //Show selected waypoint Location
 void mnu_getLocation(const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback ){
-  //ostringstream dispMsg; //To display on console
-  ROS_INFO("[LOC] %s: %f,%f,%f",feedback->marker_name.c_str(),
-  feedback->pose.position.x ,feedback->pose.position.y,feedback->pose.orientation.z);
+  geometry_msgs::PoseWithCovariance pwc_gl;
+  pwc_gl.pose.position.x=feedback->pose.position.x;
+  pwc_gl.pose.position.y=feedback->pose.position.y;
+  pwc_gl.pose.orientation.z=feedback->pose.orientation.z;
+  pwc_gl.pose.orientation.z=feedback->pose.orientation.w;
+  //To display on console
+  printDebugPose("CURRENT LOC", feedback->marker_name, pwc_gl);
 }
 
 //Add waypoint
@@ -128,6 +188,9 @@ void mnu_removeWaypoint(const visualization_msgs::InteractiveMarkerFeedbackConst
   int markerID = stoi(markerName.substr(markerName.find(delimiter)+1, -1)); // Get last part of string, since name is waypoint_[ID]; Convert str->int
 
   if(marker_count>1){
+    //Remove from map
+    wpl.erase(markerName);
+
     //Remove from server
     server->erase(feedback->marker_name);
     server->applyChanges();
@@ -145,50 +208,56 @@ void mnu_removeWaypoint(const visualization_msgs::InteractiveMarkerFeedbackConst
 }
 
 void mnu_createList(const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback){
-  //   std_msgs::String dispMsg;
-  // dispMsg.data = to_string(marker_count);
-  ROS_INFO("%s %i","[Generating list] Waypoint Count ->",marker_count);
+  ROS_INFO("%s %i","[Generating list] Total Waypoints ->",marker_count);
 
   server->applyChanges(); //Update the interactive marker ist before saving the data
 
   //Save as YAML file
   YAML::Node pts;
+  pts["count"] = (int) marker_count;  // Write total number of waypoints
 
-  //Get updated waypoint list
-  list <geometry_msgs::PoseWithCovariance> :: iterator it;
+  //Iterate through map
+  p_map::iterator it = wpl.begin();
   int idx=0;
-  for(it = wl.begin(); it != wl.end(); ++it){
-    std_msgs::String msgT;
 
-    msgT.data = "P"+to_string(idx);
-    msgT.data += ", ";
-    msgT.data += to_string(it->pose.position.x);
-    msgT.data += ", ";
-    msgT.data += to_string(it->pose.position.y);
-    msgT.data += ", ";
-    msgT.data += to_string(it->pose.orientation.z);
-
-    //Add to YAML list
-    pts["Waypoints"].push_back(msgT.data.c_str());  // node["seq"] automatically becomes a sequence
-
-    if(DEBUG){
-      //Show on console
-      ROS_INFO("%s",msgT.data.c_str());
-    }
-    idx++;//Increment counter
+  while(it != wpl.end())
+  {
+    std::string wp_index = "WP"+std::to_string(idx);
+    //Add Position to YAML list
+    //pts[wp_index].push_back(it->first);
+    pts[wp_index].push_back(it->second.pose.position.x);
+    pts[wp_index].push_back(it->second.pose.position.y);
+    pts[wp_index].push_back(it->second.pose.orientation.z);
+    pts[wp_index].push_back(it->second.pose.orientation.w);
+    ROS_INFO_STREAM(pts);
+    it++;
+    idx++;
   }
 
-  //Currently saves to .ros DIRECTORY
+  //Create list
   fstream exportlist;
-  string loc = getCurrentTime();
-  loc+="_wplist.yaml";
-  ROS_INFO("Writing waypoint list to %s", loc.c_str());
-  exportlist.open(loc,fstream::out);
+  string loc = ros::package::getPath("waypointgen") + "/wp_list/";  //Get package path, Save into list directory
 
+  //Check if list directory exist
+  const char* path = loc.c_str();
+  boost::filesystem::path dir(path);
+  if(boost::filesystem::create_directory(dir))
+  {
+    ROS_INFO("'list' directory not found, creating one -> %s", loc.c_str());
+  }
+
+  //File Name
+  string lstName=getCurrentTime()+"_wplist.yaml";
+  //Append to main path
+  loc+=lstName;
+  if(DEBUG){
+    ROS_INFO("Writing waypoint list to %s", loc.c_str());
+  }
+
+  exportlist.open(loc,fstream::out);
   exportlist << pts;
   exportlist.close();
-  ROS_INFO_STREAM("Saved to : ~/.ros/" << loc);
-
+  ROS_INFO_STREAM("Saved to -> " << loc);
 }
 
 /*
