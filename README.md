@@ -16,7 +16,7 @@ Launch the Waypoint Generator via *roslaunch*, which would launch the program an
 ```
 $ roslaunch waypointgen setpoint_marker.launch  
 ```
-Next, add the InteractiveMarker in Rviz. (Topic name:*/setpoint_marker/update*)
+Next, add the InteractiveMarker in Rviz. (Topic name: */setpoint_marker/update*)
 
 ![InteractiveMarkers](assets/a.jpg)
 
