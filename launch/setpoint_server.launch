@@ -1,0 +1,5 @@
+<launch>
+  <node pkg="waypointgen" type="setpoint_server" respawn="false" name="setpoint_server" output="screen">
+    <param name="pathway" type="str" value="a.yaml"/>
+  </node>
+</launch>
