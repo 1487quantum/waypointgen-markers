@@ -31,6 +31,7 @@ unsigned char marker_count = 0; //Keep track of number of waypoints created
 typedef std::map<std::string,geometry_msgs::PoseWithCovariance> p_map;
 p_map wpl;
 
+float lastMarker[2]={0.0,0.0};//Get pos of last marker
 
 //Subscriber
 ros::Subscriber sub_setpoint_list;
@@ -90,6 +91,9 @@ void updateWaypointPos( const visualization_msgs::InteractiveMarkerFeedbackConst
       feedback->pose.position.x, feedback->pose.position.y, feedback->pose.position.z,
       feedback->pose.orientation.x,feedback->pose.orientation.y,feedback->pose.orientation.z,feedback->pose.orientation.w);
     }
+    //Update lastMarker position
+    lastMarker[0]=feedback->pose.position.x;
+    lastMarker[1]=feedback->pose.position.y;
     //Update pose in map
     geometry_msgs::PoseWithCovariance pwc;
     pwc.pose.position.x=feedback->pose.position.x;
@@ -113,10 +117,8 @@ void printDebugPose(std::string dmsg, std::string wp_name, geometry_msgs::PoseWi
 //Subscriber callback
 void setpointListCallback(const visualization_msgs::InteractiveMarkerInitConstPtr msg){
   geometry_msgs::PoseWithCovariance pt;
-
   updateWPList(wpl);
   for(auto mk:msg->markers){
-    server->applyChanges(); //Update waypoint list
     //Create Quaternion for rotation
     tf::Quaternion qtmp(mk.pose.orientation.x,mk.pose.orientation.y,mk.pose.orientation.z,mk.pose.orientation.w);
     //Create pose
@@ -151,7 +153,7 @@ void updateWypt(p_map tmp, string wp_name, geometry_msgs::PoseWithCovariance pt)
     wpl[wp_name]=pt;
   }else{
     if(DEBUG){
-      printDebugPose("INSRT WAYPONT", wp_name, pt);
+      printDebugPose("INSERT WAYPONT", wp_name, pt);
     }
     wpl.insert(std::make_pair(wp_name,pt));
   }
@@ -210,27 +212,24 @@ void mnu_removeWaypoint(const visualization_msgs::InteractiveMarkerFeedbackConst
 void mnu_createList(const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback){
   ROS_INFO("%s %i","[Generating list] Total Waypoints ->",marker_count);
 
-  server->applyChanges(); //Update the interactive marker ist before saving the data
-
   //Save as YAML file
   YAML::Node pts;
   pts["count"] = (int) marker_count;  // Write total number of waypoints
 
-  //Iterate through map
-  p_map::iterator it = wpl.begin();
   int idx=0;
 
-  while(it != wpl.end())
+  //Iterate through map
+  for(  p_map::iterator it=wpl.begin(); it != wpl.end();it++)
   {
     std::string wp_index = "WP"+std::to_string(idx);
     //Add Position to YAML list
     //pts[wp_index].push_back(it->first);
+
+    //Save quaternion to YAML
     pts[wp_index].push_back(it->second.pose.position.x);
     pts[wp_index].push_back(it->second.pose.position.y);
     pts[wp_index].push_back(it->second.pose.orientation.z);
     pts[wp_index].push_back(it->second.pose.orientation.w);
-    ROS_INFO_STREAM(pts);
-    it++;
     idx++;
   }
 
@@ -370,8 +369,14 @@ void addWaypoint(unsigned int mrk_id){
 
   //Set Header
   mrk = setHeader(mrk,mrk_id);
-  //Vary spawn location
-  mrk = setPos(mrk,mrk_id%5 - 2,mrk_id%6 - 2);
+  //mrk = setPos(mrk,mrk_id%5 - 2,mrk_id%6 - 2);  //Vary spawn location
+
+  //Set next marker close to previous one
+  mrk = setPos(mrk, lastMarker[0]+1,lastMarker[1]+1);
+  //Update
+  lastMarker[0]+=1;
+  lastMarker[1]+=1;
+
   //Add motion CONTROLS
   mrk = addMotionControl(mrk,imc_m);
   //Add MENU
