@@ -41,12 +41,31 @@ MenuHandler menu_handler;
 bool menuInit = false;
 
 //Fx declaration
-void mnu_addNewWaypoint(const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback);
-void addWaypoint(unsigned int mrk_id);
-InteractiveMarkerControl addMovementControl(InteractiveMarkerControl im_c,bool mw,bool mx,bool my,bool mz,string mName, bool mvAxis);
-void updateWPList(p_map tmp);
 void updateWypt(p_map tmp, string wp_name, geometry_msgs::PoseWithCovariance pt);
+void addWaypointMarker(unsigned int mrk_id);
 void printDebugPose(std::string dmsg, std::string wp_name, geometry_msgs::PoseWithCovariance pw);
+//Sub/Pub
+void updateWaypointPos( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback );
+void setpointListCallback(const visualization_msgs::InteractiveMarkerInitConstPtr msg);
+//Menu
+void mnu_addNewWaypoint(const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback);
+void mnu_createList(const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback);
+void mnu_removeWaypoint(const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback);
+void addContextMnu(bool init);
+//Markers
+InteractiveMarker setHeader(InteractiveMarker imk_h, int index_h);
+InteractiveMarker setPos(InteractiveMarker imk_h, int sx, int sy);
+Marker makeArrow(unsigned char mrk_id);
+//Controls
+InteractiveMarkerControl addIntCtrl(InteractiveMarkerControl imc, unsigned char mk_id);
+InteractiveMarkerControl addMovementControl(InteractiveMarkerControl im_c,bool mw,bool mx,bool my,bool mz,string mName, bool mvAxis);
+InteractiveMarker addMotionControl(InteractiveMarker i_mk, InteractiveMarkerControl imc_am);
+//Export
+geometry_msgs::PoseWithCovariance createPose(double cx,double cy,tf::Quaternion q_rotate);
+string addZero(int a);
+string getCurrentTime();
+void updateWPList(p_map tmp);
+
 
 //Add zero infront if less than 10
 string addZero(int a){
@@ -173,7 +192,7 @@ void mnu_getLocation(const visualization_msgs::InteractiveMarkerFeedbackConstPtr
 //Add waypoint
 void mnu_addNewWaypoint(const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback ){
   if(marker_id<256){
-    addWaypoint(++marker_id);
+    addWaypointMarker(++marker_id);
     ROS_INFO("Waypoint Added!");
   }else{
     ROS_INFO("Setpoint limit reached!");
@@ -363,7 +382,7 @@ InteractiveMarkerControl addIntCtrl(InteractiveMarkerControl imc, unsigned char 
   return imc;
 }
 
-void addWaypoint(unsigned int mrk_id){
+void addWaypointMarker(unsigned int mrk_id){
   InteractiveMarker mrk;
   InteractiveMarkerControl imc_m;
 
@@ -404,7 +423,7 @@ int main(int argc, char** argv)
   server.reset( new InteractiveMarkerServer("setpoint_marker","",false) );
 
   //Add waypoint at start
-  addWaypoint(marker_id);
+  addWaypointMarker(marker_id);
 
   //Subscriber
   ros::NodeHandle n;
