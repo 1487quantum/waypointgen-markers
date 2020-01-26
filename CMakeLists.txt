@@ -12,14 +12,14 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   tf
   visualization_msgs
-  actionlib_msgs
   roslib
   move_base_msgs
   actionlib
+wpg_msg
 )
 
 ## System dependencies are found with CMake's conventions
-# find_package(Boost REQUIRED COMPONENTS system)
+find_package(Boost REQUIRED COMPONENTS system)
 
 #Use cpp11
 set(CMAKE_CXX_FLAGS "-std=c++11 ${CMAKE_CXX_FLAGS}")
@@ -66,10 +66,10 @@ set(CMAKE_CXX_FLAGS "-std=c++11 ${CMAKE_CXX_FLAGS}")
 # )
 
 ## Generate actions in the 'action' folder
- add_action_files(
- DIRECTORY action
-   FILES wpServer.action
- )
+ #add_action_files(
+ #DIRECTORY action
+#   FILES wpServer.action
+ #)
 
 ## Generate added messages and services with any dependencies listed here
  generate_messages(
@@ -121,10 +121,7 @@ catkin_package(
 
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
-include_directories(
-# include
-  ${catkin_INCLUDE_DIRS}
-)
+include_directories(include ${catkin_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS})
 
 ## Declare a C++ library
 # add_library(${PROJECT_NAME}
