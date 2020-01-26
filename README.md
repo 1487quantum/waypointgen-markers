@@ -2,6 +2,11 @@
 A waypoint generator (using InteractiveMarkers in Rviz) and a waypoint server for playback. 
 
 ## Usage
+Ensure that the waypointgen action msg is cloned into the workspace before cloning the main waypointgen package:
+```
+$ git clone https://github.com/1487quantum/wpg_msg.git
+```
+
 Git clone the ROS Package into the relevant workspace & compile it:
 ```
 $ git clone https://github.com/1487quantum/waypointgen.git
