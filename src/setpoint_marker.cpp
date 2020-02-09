@@ -61,6 +61,7 @@ InteractiveMarkerControl addIntCtrl(InteractiveMarkerControl imc, unsigned char 
 InteractiveMarkerControl addMovementControl(InteractiveMarkerControl im_c,bool mw,bool mx,bool my,bool mz,string mName, bool mvAxis);
 InteractiveMarker addMotionControl(InteractiveMarker i_mk, InteractiveMarkerControl imc_am);
 //Export
+geometry_msgs::PoseWithCovariance addPoseCov(double pX,double pY,double pZ,double oX,double oY,double oZ,double oW);
 geometry_msgs::PoseWithCovariance createPose(double cx,double cy,tf::Quaternion q_rotate);
 string addZero(int a);
 string getCurrentTime();
@@ -87,15 +88,22 @@ string getCurrentTime(){
   return timenow;
 }
 
+//Param: position,orientation
+geometry_msgs::PoseWithCovariance addPoseCov(double pX,double pY,double pZ,double oX,double oY,double oZ,double oW){
+  geometry_msgs::PoseWithCovariance cov_pose;
+  cov_pose.pose.position.x = pX;
+  cov_pose.pose.position.y = pY;
+  cov_pose.pose.position.z = pZ;
+  cov_pose.pose.orientation.x = oX;
+  cov_pose.pose.orientation.y = oY;
+  cov_pose.pose.orientation.z = oZ;
+  cov_pose.pose.orientation.w = oW;
+return cov_pose;
+}
+
 geometry_msgs::PoseWithCovariance createPose(double cx,double cy,tf::Quaternion q_rotate){
   geometry_msgs::PoseWithCovariance wpoint;
-  wpoint.pose.position.x = cx;
-  wpoint.pose.position.y = cy;
-  wpoint.pose.position.z = 0;
-  wpoint.pose.orientation.x = q_rotate[0];
-  wpoint.pose.orientation.y = q_rotate[1];
-  wpoint.pose.orientation.z = q_rotate[2];
-  wpoint.pose.orientation.w = q_rotate[3];
+  wpoint = addPoseCov(cx,cy,0,q_rotate[0],q_rotate[1],q_rotate[2],q_rotate[3]);
   return wpoint;
 }
 
@@ -115,10 +123,7 @@ void updateWaypointPos( const visualization_msgs::InteractiveMarkerFeedbackConst
     lastMarker[1]=feedback->pose.position.y;
     //Update pose in map
     geometry_msgs::PoseWithCovariance pwc;
-    pwc.pose.position.x=feedback->pose.position.x;
-    pwc.pose.position.y=feedback->pose.position.y;
-    pwc.pose.orientation.z=feedback->pose.orientation.z;
-    pwc.pose.orientation.w=feedback->pose.orientation.w;
+    pwc = addPoseCov(feedback->pose.position.x,feedback->pose.position.y,feedback->pose.position.z,feedback->pose.orientation.x,feedback->pose.orientation.y,feedback->pose.orientation.z,feedback->pose.orientation.w);
     updateWypt(wpl,feedback->marker_name,pwc);
 
     server->applyChanges();
@@ -183,8 +188,12 @@ void mnu_getLocation(const visualization_msgs::InteractiveMarkerFeedbackConstPtr
   geometry_msgs::PoseWithCovariance pwc_gl;
   pwc_gl.pose.position.x=feedback->pose.position.x;
   pwc_gl.pose.position.y=feedback->pose.position.y;
+  pwc_gl.pose.position.z=feedback->pose.position.z;
+
+  pwc_gl.pose.orientation.x=feedback->pose.orientation.x;
+  pwc_gl.pose.orientation.y=feedback->pose.orientation.y;
   pwc_gl.pose.orientation.z=feedback->pose.orientation.z;
-  pwc_gl.pose.orientation.z=feedback->pose.orientation.w;
+  pwc_gl.pose.orientation.w=feedback->pose.orientation.w;
   //To display on console
   printDebugPose("CURRENT LOC", feedback->marker_name, pwc_gl);
 }
@@ -247,6 +256,8 @@ void mnu_createList(const visualization_msgs::InteractiveMarkerFeedbackConstPtr 
     //Save quaternion to YAML
     pts[wp_index].push_back(it->second.pose.position.x);
     pts[wp_index].push_back(it->second.pose.position.y);
+    pts[wp_index].push_back(it->second.pose.orientation.x);
+    pts[wp_index].push_back(it->second.pose.orientation.y);
     pts[wp_index].push_back(it->second.pose.orientation.z);
     pts[wp_index].push_back(it->second.pose.orientation.w);
     idx++;

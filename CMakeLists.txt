@@ -15,7 +15,6 @@ find_package(catkin REQUIRED COMPONENTS
   roslib
   move_base_msgs
   actionlib
-wpg_msg
 )
 
 ## System dependencies are found with CMake's conventions
