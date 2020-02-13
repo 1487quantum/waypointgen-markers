@@ -3,8 +3,6 @@
 #include <yaml-cpp/yaml.h>
 #include <fstream>
 
-#include <iostream>
-
 #include <tf/tf.h>
 #include <move_base_msgs/MoveBaseAction.h>
 #include <actionlib/client/simple_action_client.h>
@@ -60,12 +58,15 @@ public:
   void init();
 
   //Callbacks
-  void posCurrentCallback(const geometry_msgs::PoseStamped &msgLoc);
   void gPlanCallback(const nav_msgs::Path &msg);
+
+  //Move base action callback
   void goalDoneCB(const actionlib::SimpleClientGoalState& state, const move_base_msgs::MoveBaseResultConstPtr& msg);
+  void goalFeedbackCB(const move_base_msgs::MoveBaseFeedbackConstPtr &feedback);
 
   //Waypoints
   int loadWaypointList(  std::string list_path);
+  float getPathDist(std::vector<geometry_msgs::PoseStamped> pathVector);
 
   void publishPoint(ros::Publisher pb,geometry_msgs::PoseStamped msg);
   geometry_msgs::PoseStamped convertToPoseStamped(std::string poseFrameID, geometry_msgs::Pose poseTarget);
@@ -76,7 +77,6 @@ public:
 void waypointgen::init(){
   ROS_INFO("Init pub & sub");
 
-  posCurrentSub =  nh_.subscribe("/robot_pose", 10, &waypointgen::posCurrentCallback, this);
   gPlanSub=  nh_.subscribe("/move_base/TebLocalPlannerROS/global_plan", 10, &waypointgen::gPlanCallback, this);
 
   //Publisher
@@ -84,20 +84,15 @@ void waypointgen::init(){
   distToGoalPub= nh_.advertise<std_msgs::Float32>("/dist_to_goal", 10, true); //Turn on latch so that last published msg would be saved
 }
 
-//Get current location
-void waypointgen::posCurrentCallback(const geometry_msgs::PoseStamped &msgLoc) {
-  // helper variables
-  ros::Rate r(1);
-  bool success = true;
 
-  //  currentLoc = *msg;
-  //ROS_INFO("%s: Pose call back", msgLoc.c_str());
-  //  ROS_INFO("%s: Test->%i", an.c_str(), msg->wp_goal);
-
-}
 
 void waypointgen::goalDoneCB(const actionlib::SimpleClientGoalState& state, const move_base_msgs::MoveBaseResultConstPtr& msg){
   ROS_INFO("Finished in state [%s]", state.toString().c_str());
+}
+
+//Get current location
+void waypointgen::goalFeedbackCB(const move_base_msgs::MoveBaseFeedbackConstPtr &feedback){
+  ROS_INFO("[X]:%f [Y]:%f [W]: %f",feedback->base_position.pose.position.x,feedback->base_position.pose.position.y,feedback->base_position.pose.orientation.w);
 }
 
 //Get current location
@@ -105,22 +100,28 @@ void waypointgen::gPlanCallback(const nav_msgs::Path &msg) {
   //Reset distance
   distToGoal = 0;
   // Calculate path to target waypoint
-  std::vector<geometry_msgs::PoseStamped> pts = msg.poses;
-  //ROS_INFO_STREAM(pts.size());
+  std::vector<geometry_msgs::PoseStamped> path_poses = msg.poses;
 
-  int size = pts.size();    //Get num of path points
-  //Num of pose path has
-  for(int i=0; i<size-1;i++){
-    float x1 = msg.poses[i].pose.position.x;
-    float x2 = msg.poses[i+1].pose.position.x;
-    float y1 = msg.poses[i].pose.position.y;
-    float y2 = msg.poses[i+1].pose.position.y;
-    //ROS_INFO("%f %f %f %f",x1,x2,y1,y2);
-    distToGoal += sqrt(pow((x2-x1),2)+pow((y2-y1),2));
-    //ROS_INFO("Path len: %f",distToGoal);
-  }
+  distToGoal = getPathDist(path_poses);
+
   ROS_INFO("Final Path len: %f",distToGoal);
 
+}
+
+float waypointgen::getPathDist(std::vector<geometry_msgs::PoseStamped> pathVector){
+  float dst = 0;
+  //Get num of path points
+  int sz = pathVector.size();
+  for(int i=0;i<sz-1;i++){
+    float x1 = pathVector[i].pose.position.x;
+    float x2 = pathVector[i+1].pose.position.x;
+    float y1 = pathVector[i].pose.position.y;
+    float y2 = pathVector[i+1].pose.position.y;
+    //ROS_INFO("%f %f %f %f",x1,x2,y1,y2);
+    dst += sqrt(pow((x2-x1),2)+pow((y2-y1),2));
+    //ROS_INFO("Path len: %f",distToGoal);
+  }
+  return dst;
 }
 
 //Load and parse the waypoint list, return number of waypoints
@@ -268,8 +269,8 @@ void waypointgen::p2p(int currentWP, ros::Publisher pb, geometry_msgs::Pose qpt)
   //Current waypoint, total waypoint, x pos, y pos, angular (yaw)
   ROS_INFO("Sending next goal [%i/%i]: (%.2f,%.2f, %.2f)",currentWP+1, wp_count, qpt.position.x,qpt.position.y,yaw);
 
-  //ac.sendGoal(goal, &waypointgen::goalDoneCB, &waypointgen::goalActiveCB, &waypointgen::goalFeedbackCB);
-  ac.sendGoal(goal,boost::bind(&waypointgen::goalDoneCB, this,_1,_2),MoveBaseClient::SimpleActiveCallback(), MoveBaseClient::SimpleFeedbackCallback());
+  //ac.sendGoal(goal,boost::bind(&waypointgen::goalDoneCB, this,_1,_2),MoveBaseClient::SimpleActiveCallback(), MoveBaseClient::SimpleFeedbackCallback());
+  ac.sendGoal(goal,boost::bind(&waypointgen::goalDoneCB, this,_1,_2),MoveBaseClient::SimpleActiveCallback(), boost::bind(&waypointgen::goalFeedbackCB, this,_1));
 
   //Publish current waypoint goal
   pb.publish(goalPose);
