@@ -3,6 +3,8 @@
 #include <yaml-cpp/yaml.h>
 #include <fstream>
 
+#include <iostream>
+
 #include <tf/tf.h>
 #include <move_base_msgs/MoveBaseAction.h>
 #include <actionlib/client/simple_action_client.h>
@@ -43,7 +45,7 @@ public:
   ros::Publisher pointPub; // publish waypoint_goal
   ros::Publisher distToGoalPub; // publish distance to goal
 
-
+  int numOfWaypoints = 0;
   float distToGoal =0;
 
   //Constructor
@@ -63,7 +65,7 @@ public:
   void goalDoneCB(const actionlib::SimpleClientGoalState& state, const move_base_msgs::MoveBaseResultConstPtr& msg);
 
   //Waypoints
-  void loadWaypointList(  std::string list_path);
+  int loadWaypointList(  std::string list_path);
 
   void publishPoint(ros::Publisher pb,geometry_msgs::PoseStamped msg);
   geometry_msgs::PoseStamped convertToPoseStamped(std::string poseFrameID, geometry_msgs::Pose poseTarget);
@@ -103,21 +105,26 @@ void waypointgen::gPlanCallback(const nav_msgs::Path &msg) {
   //Reset distance
   distToGoal = 0;
   // Calculate path to target waypoint
-  int size = sizeof(msg.poses)/sizeof(geometry_msgs::PoseStamped);  //Num of pose path has
+  std::vector<geometry_msgs::PoseStamped> pts = msg.poses;
+  //ROS_INFO_STREAM(pts.size());
+
+  int size = pts.size();    //Get num of path points
+  //Num of pose path has
   for(int i=0; i<size-1;i++){
     float x1 = msg.poses[i].pose.position.x;
     float x2 = msg.poses[i+1].pose.position.x;
     float y1 = msg.poses[i].pose.position.y;
     float y2 = msg.poses[i+1].pose.position.y;
+    //ROS_INFO("%f %f %f %f",x1,x2,y1,y2);
     distToGoal += sqrt(pow((x2-x1),2)+pow((y2-y1),2));
-    ROS_INFO("Path len: %.1f",distToGoal);
+    //ROS_INFO("Path len: %f",distToGoal);
   }
-  ROS_INFO("Final Path len: %.1f",distToGoal);
+  ROS_INFO("Final Path len: %f",distToGoal);
 
 }
 
-//Load and parse the waypoint list
-void waypointgen::loadWaypointList(std::string list_path){
+//Load and parse the waypoint list, return number of waypoints
+int waypointgen::loadWaypointList(std::string list_path){
   //Open yaml file, parse it as string
   std::ifstream ifs(list_path);
   std::string yml_content( (std::istreambuf_iterator<char>(ifs) ),(std::istreambuf_iterator<char>()) );
@@ -303,7 +310,7 @@ int main(int argc, char** argv){
   }
 
   //Load the waypoint list
-  wpg.loadWaypointList(l_path);
+  wpg.numOfWaypoints = wpg.loadWaypointList(l_path);
 
   //Wait for 10s before starting
   int dr = 10;
