@@ -11,10 +11,12 @@ find_package(catkin REQUIRED COMPONENTS
   interactive_markers
   roscpp
   tf
-  visualization_msgs
   roslib
-  move_base_msgs
   actionlib
+  geometry_msgs
+  move_base_msgs
+  nav_msgs
+  visualization_msgs
 )
 
 ## System dependencies are found with CMake's conventions
