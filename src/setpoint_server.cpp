@@ -24,24 +24,29 @@ class waypointgen{
 private:
   //  typedef boost::shared_ptr<const geometry_msgs::PoseStamped> PoseConstPtr;
   typedef actionlib::SimpleActionClient<move_base_msgs::MoveBaseAction> MoveBaseClient;
-  std::string an;
+
+  //Subscriber
+  ros::Subscriber posCurrentSub;    // Subscribe to robot_pose
+  ros::Subscriber gPlanSub;         // Subscribe to global path plan by TebLocalPlanner
+
+  //Publisher
+  ros::Publisher pointPubGoal;          // publish waypoint_goal
+  ros::Publisher distToGoalPub;     // publish distance to goal
 
   //Total number of waypoints
   int wp_count=0;
 
+  //Distance to goal
+  ros::Timer timerGoal;             //Refresh and get distance to goal
+  float ecDist = 0;                 //Euclidean distance from goal
+  float gpDist = 0;                 //Global Path distance from goal
+
+
 public:
   ros::NodeHandle nh_;
-  std::vector<geometry_msgs::Pose> wpList;  //Waypoint listed
+  std::vector<geometry_msgs::Pose> wpList;      //Waypoint listed
 
-  geometry_msgs::PoseStamped currentLoc; //current pos
-
-  //Subscriber
-  ros::Subscriber posCurrentSub; // Subscribe to robot_pose
-  ros::Subscriber gPlanSub; // Subscribe to global path plan by TebLocalPlanner
-
-  //Publisher
-  ros::Publisher pointPub; // publish waypoint_goal
-  ros::Publisher distToGoalPub; // publish distance to goal
+  geometry_msgs::Pose currentWaypoint;          //current waypoint
 
   int numOfWaypoints = 0;
   float distToGoal =0;
@@ -59,6 +64,7 @@ public:
 
   //Callbacks
   void gPlanCallback(const nav_msgs::Path &msg);
+  void timerGoalCallback(const ros::TimerEvent& event);
 
   //Move base action callback
   void goalDoneCB(const actionlib::SimpleClientGoalState& state, const move_base_msgs::MoveBaseResultConstPtr& msg);
@@ -67,10 +73,10 @@ public:
   //Waypoints
   int loadWaypointList(  std::string list_path);
   float getPathDist(std::vector<geometry_msgs::PoseStamped> pathVector);
-
-  void publishPoint(ros::Publisher pb,geometry_msgs::PoseStamped msg);
   geometry_msgs::PoseStamped convertToPoseStamped(std::string poseFrameID, geometry_msgs::Pose poseTarget);
-  void p2p(int currentWP, ros::Publisher pb,geometry_msgs::Pose qpt);
+
+  //Point 2 Point
+  void p2p(int currentWP,geometry_msgs::Pose qpt);
 };
 
 //Start sub and pub
@@ -80,34 +86,61 @@ void waypointgen::init(){
   gPlanSub=  nh_.subscribe("/move_base/TebLocalPlannerROS/global_plan", 10, &waypointgen::gPlanCallback, this);
 
   //Publisher
-  pointPub= nh_.advertise<geometry_msgs::PoseStamped>("/current_waypoint_goal", 10, true); //Turn on latch so that last published msg would be saved
+  pointPubGoal= nh_.advertise<geometry_msgs::PoseStamped>("/current_waypoint_goal", 10, true); //Turn on latch so that last published msg would be saved
   distToGoalPub= nh_.advertise<std_msgs::Float32>("/dist_to_goal", 10, true); //Turn on latch so that last published msg would be saved
+  timerGoal= nh_.createTimer(ros::Duration(0.2), &waypointgen::timerGoalCallback,this);
 }
 
 
-
+//Callbacks
+//move_base_action CB
 void waypointgen::goalDoneCB(const actionlib::SimpleClientGoalState& state, const move_base_msgs::MoveBaseResultConstPtr& msg){
   ROS_INFO("Finished in state [%s]", state.toString().c_str());
 }
 
 //Get current location
 void waypointgen::goalFeedbackCB(const move_base_msgs::MoveBaseFeedbackConstPtr &feedback){
-  ROS_INFO("[X]:%f [Y]:%f [W]: %f",feedback->base_position.pose.position.x,feedback->base_position.pose.position.y,feedback->base_position.pose.orientation.w);
+  float dispFromGoal; //Displacement from goal
+
+  std::vector<geometry_msgs::PoseStamped> dFromGoal;
+
+  //Insert waypoint goalPose
+  geometry_msgs::PoseStamped poseTemp = convertToPoseStamped(feedback->base_position.header.frame_id, currentWaypoint);
+  dFromGoal.push_back(poseTemp);
+
+  //Insert current position
+  poseTemp = convertToPoseStamped(feedback->base_position.header.frame_id, feedback->base_position.pose);
+  dFromGoal.push_back(poseTemp);
+
+  //Calculate displacement from goal
+  ecDist = getPathDist(dFromGoal);
+  ROS_INFO("Euclidean distance: %f",ecDist);
+  //ROS_INFO("[X]:%f [Y]:%f [W]: %f",feedback->base_position.pose.position.x,feedback->base_position.pose.position.y,feedback->base_position.pose.orientation.w);
 }
 
-//Get current location
+//Get global path length
 void waypointgen::gPlanCallback(const nav_msgs::Path &msg) {
-  //Reset distance
-  distToGoal = 0;
-  // Calculate path to target waypoint
   std::vector<geometry_msgs::PoseStamped> path_poses = msg.poses;
-
-  distToGoal = getPathDist(path_poses);
-
-  ROS_INFO("Final Path len: %f",distToGoal);
-
+  gpDist = getPathDist(path_poses);                                   // Calculate path to target waypoint
+  ROS_INFO("Global Path len: %f", gpDist);
 }
 
+//Publish average of Global path length & Euclidean distance from target if both are non zero
+void waypointgen::timerGoalCallback(const ros::TimerEvent& event)
+{
+  std_msgs::Float32 tgoal;
+  if(ecDist==0){
+    tgoal.data = gpDist;
+  }else if(gpDist==0){
+    tgoal.data = ecDist;
+  }else{
+    tgoal.data = (ecDist+gpDist)/2;
+  }
+  distToGoalPub.publish(tgoal);
+  ROS_INFO("Avg distance: %f",tgoal.data);
+}
+
+//Calculate path length
 float waypointgen::getPathDist(std::vector<geometry_msgs::PoseStamped> pathVector){
   float dst = 0;
   //Get num of path points
@@ -123,6 +156,10 @@ float waypointgen::getPathDist(std::vector<geometry_msgs::PoseStamped> pathVecto
   }
   return dst;
 }
+
+/*
+YAML Parsing
+*/
 
 //Load and parse the waypoint list, return number of waypoints
 int waypointgen::loadWaypointList(std::string list_path){
@@ -201,11 +238,6 @@ int waypointgen::loadWaypointList(std::string list_path){
   #endif
 }
 
-//Pub current loc
-void waypointgen::publishPoint(ros::Publisher pb, geometry_msgs::PoseStamped msg){
-  pb.publish(msg);
-}
-
 //Adds timestamps to poses, converts pose to poseStamped: poseTarget -> poseStamped
 geometry_msgs::PoseStamped waypointgen::convertToPoseStamped(std::string poseFrameID, geometry_msgs::Pose poseTarget){
   geometry_msgs::PoseStamped poseStamped;
@@ -227,7 +259,7 @@ geometry_msgs::PoseStamped waypointgen::convertToPoseStamped(std::string poseFra
 }
 
 //Point to point navigation
-void waypointgen::p2p(int currentWP, ros::Publisher pb, geometry_msgs::Pose qpt){
+void waypointgen::p2p(int currentWP, geometry_msgs::Pose qpt){
   //tell the action client that we want to spin a thread by default
   MoveBaseClient ac("move_base", true);
   ROS_INFO("Moving out soon...");
@@ -273,7 +305,7 @@ void waypointgen::p2p(int currentWP, ros::Publisher pb, geometry_msgs::Pose qpt)
   ac.sendGoal(goal,boost::bind(&waypointgen::goalDoneCB, this,_1,_2),MoveBaseClient::SimpleActiveCallback(), boost::bind(&waypointgen::goalFeedbackCB, this,_1));
 
   //Publish current waypoint goal
-  pb.publish(goalPose);
+  pointPubGoal.publish(goalPose);
 
   ac.waitForResult();
 
@@ -294,6 +326,13 @@ int main(int argc, char** argv){
   ros::NodeHandle n("~");
   waypointgen wpg("WPG",n);
   wpg.init();
+
+  //Start Multithreading Process(Async thread): http://wiki.ros.org/roscpp/Overview/Callbacks%20and%20Spinning
+  //std::thread::hardware_concurrency -> Returns the number of concurrent threads supported by the implementation, would be 4
+  ros::AsyncSpinner spinner(boost::thread::hardware_concurrency());
+  ros::Rate r(10);  //Run at 10Hz
+
+  spinner.start();
 
   //Get waypoint list to use in the wp_list directory (Inlude yaml extension at back)
   std::string l_path;
@@ -322,14 +361,15 @@ int main(int argc, char** argv){
 
   //Start Navigation
   for(int i=0;i<wpg.wpList.size();i++){
-    wpg.p2p(i, wpg.pointPub, wpg.wpList.at(i));
-    //Publish distance to waypoint
-    std_msgs::Float32 ftmp;
-    ftmp.data = wpg.distToGoal;
+    wpg.currentWaypoint = wpg.wpList.at(i);
+    wpg.p2p(i, wpg.wpList.at(i));
+
   }
 
   ROS_INFO("Completed route!");
 
-  ros::spin();
+
+  ros::waitForShutdown();
+  //ros::spin();
   return 0;
 }
