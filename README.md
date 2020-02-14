@@ -1,5 +1,5 @@
 # waypointgen
-A waypoint generator (using InteractiveMarkers in Rviz) and a waypoint server for playback. 
+A waypoint generator (using InteractiveMarkers in Rviz) and a waypoint server for waypoint playback. The waypoints are saved as a **YAML** file.
 
 ## Usage
 Ensure that the waypointgen action msg is cloned into the workspace before cloning the main waypointgen package:
@@ -23,6 +23,8 @@ $ roslaunch waypointgen setpoint_marker.launch
 Next, add the InteractiveMarker in Rviz. (Topic name: */setpoint_marker/update*)
 
 ![InteractiveMarkers](assets/a.jpg)
+
+> Alternatively, load _wp_markers.rviz_ into Rviz!
 
 There are 3 options to choose from the context menu (when the marker is _right-clicked_), which are
 - **Get Location**: Get current location of marker selected.
