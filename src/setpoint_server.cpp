@@ -33,7 +33,7 @@ public:
   ros::NodeHandle nh_;
   std::vector<geometry_msgs::Pose> wpList;  //Waypoint listed
 
-  geometry_msgs::PoseStamped currentLoc; //current pos
+  geometry_msgs::Pose currentWaypoint; //current waypoint
 
   //Subscriber
   ros::Subscriber posCurrentSub; // Subscribe to robot_pose
@@ -92,7 +92,22 @@ void waypointgen::goalDoneCB(const actionlib::SimpleClientGoalState& state, cons
 
 //Get current location
 void waypointgen::goalFeedbackCB(const move_base_msgs::MoveBaseFeedbackConstPtr &feedback){
-  ROS_INFO("[X]:%f [Y]:%f [W]: %f",feedback->base_position.pose.position.x,feedback->base_position.pose.position.y,feedback->base_position.pose.orientation.w);
+  float dispFromGoal; //Displacement from goal
+
+  std::vector<geometry_msgs::PoseStamped> dFromGoal;
+
+  //Insert waypoint goalPose
+  geometry_msgs::PoseStamped poseTemp = convertToPoseStamped(feedback->base_position.header.frame_id, currentWaypoint);
+  dFromGoal.push_back(poseTemp);
+
+  //Insert current position
+  poseTemp = convertToPoseStamped(feedback->base_position.header.frame_id, feedback->base_position.pose);
+  dFromGoal.push_back(poseTemp);
+
+  //Calculate displacement from goal
+  float d_goal = getPathDist(dFromGoal);
+  ROS_INFO("Displacement: %f",d_goal);
+  //ROS_INFO("[X]:%f [Y]:%f [W]: %f",feedback->base_position.pose.position.x,feedback->base_position.pose.position.y,feedback->base_position.pose.orientation.w);
 }
 
 //Get current location
@@ -295,6 +310,13 @@ int main(int argc, char** argv){
   waypointgen wpg("WPG",n);
   wpg.init();
 
+  //Start Multithreading Process(Async thread): http://wiki.ros.org/roscpp/Overview/Callbacks%20and%20Spinning
+  //std::thread::hardware_concurrency -> Returns the number of concurrent threads supported by the implementation, would be 4
+  ros::AsyncSpinner spinner(boost::thread::hardware_concurrency());
+  ros::Rate r(10);  //Run at 10Hz
+
+  spinner.start();
+
   //Get waypoint list to use in the wp_list directory (Inlude yaml extension at back)
   std::string l_path;
   if (wpg.nh_.getParam("/setpoint_server/pathway", l_path))
@@ -322,6 +344,7 @@ int main(int argc, char** argv){
 
   //Start Navigation
   for(int i=0;i<wpg.wpList.size();i++){
+    wpg.currentWaypoint = wpg.wpList.at(i);
     wpg.p2p(i, wpg.pointPub, wpg.wpList.at(i));
     //Publish distance to waypoint
     std_msgs::Float32 ftmp;
@@ -330,6 +353,8 @@ int main(int argc, char** argv){
 
   ROS_INFO("Completed route!");
 
-  ros::spin();
+
+  ros::waitForShutdown();
+  //ros::spin();
   return 0;
 }
