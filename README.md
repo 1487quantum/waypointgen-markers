@@ -3,12 +3,12 @@ A waypoint generator (using InteractiveMarkers in Rviz) and a waypoint server fo
 
 ## Usage
 Ensure that the waypointgen action msg is cloned into the workspace before cloning the main waypointgen package:
-```
+```bash
 $ git clone https://github.com/1487quantum/wpg_msg.git
 ```
 
 Git clone the ROS Package into the relevant workspace & compile it:
-```
+```bash
 $ git clone https://github.com/1487quantum/waypointgen.git
 $ catkin_make
 ```
@@ -17,7 +17,7 @@ $ catkin_make
 ![Rviz](assets/b.jpg)
 
 Launch the Waypoint Generator via *roslaunch*, which would launch the program and rviz:
-```
+```bash
 $ roslaunch waypointgen setpoint_marker.launch  
 ```
 Next, add the InteractiveMarker in Rviz. (Topic name: */setpoint_marker/update*)
@@ -39,11 +39,26 @@ The waypoint server would load the YAML which is specified in the *roslaunch* fi
 > **Note:** The setpoint_server node subscribes to */move_base/TebLocalPlanner/GlobalPath*, so change it accordingly if TebLocalPlanner Plugin is not used!
 #### Playback
 Launch the playback server via *roslaunch*:
-```
+```bash
 $ roslaunch waypointgen setpoint_server.launch  
 ```
 The path of the waypoint list is specified via the *pathway* param in the launch file.
 ```
 <param name="pathway" type="str" value="a.yaml"/>
 ```
-The server would send out the waypoint goals from the list specified in the launch file 10s after initialisation.
+**Starting the server playback**
+
+By default, the server would not start until the s_state = "PLAY".
+```
+[ INFO] [1581956954.202074110]: Waiting for PLAY cmd from wpg_server_status...
+```
+To start the server, publish the *wpg_server_status* topic with <kbd>*wpg_stat*</kbd> message type. (Check it out in the */msg* dir!)
+```bash
+$ rostopic pub /wpg_server_status wayintgen/wpg_stat "status: 'PLAY'
+delay: <Delay in seconds>" 
+```
+For example, the following line below would send out the waypoint goals 10s after initialisation.
+```bash
+$ rostopic pub /wpg_server_status wayintgen/wpg_stat "status: 'Play'
+delay: 100" 
+```
