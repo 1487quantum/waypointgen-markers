@@ -43,7 +43,6 @@ private:
   float ecDist = 0;                 //Euclidean distance from goal
   float gpDist = 0;                 //Global Path distance from goal
 
-
 public:
   ros::NodeHandle nh_;
   std::vector<geometry_msgs::Pose> wpList;      //Waypoint listed
@@ -52,6 +51,20 @@ public:
 
   int numOfWaypoints = 0;
   float distToGoal =0;
+
+  //Status of server
+  /*
+  Server would have 5 states:
+  PLAY-> Run the server
+  STOP-> Stop the server
+  PAUSE -> Pause server
+  //Below 2 are not callable by topic
+  IDLE->Wait for wpg_server_status topic
+  DONE->Server complete waypoint list
+  */
+
+  std::string s_state="WAIT";
+  int s_state_delay=0;   //Delay before starting the server play, in seconds
 
   //Constructor
   waypointgen_server(std::string name, ros::NodeHandle nh_) {
@@ -86,9 +99,9 @@ public:
 void waypointgen_server::init(){
   ROS_INFO("Init pub & sub");
 
-//Subscriber
+  //Subscriber
   gPlanSub =  nh_.subscribe("/move_base/TebLocalPlannerROS/global_plan", 10, &waypointgen_server::gPlanCallback, this);
-wpgStatSub = nh_.subscribe("/wpg_server_status", 10, &waypointgen_server::wpgStatCallback, this);
+  wpgStatSub = nh_.subscribe("/wpg_server_status", 10, &waypointgen_server::wpgStatCallback, this);
   //Publisher
   pointPubGoal= nh_.advertise<geometry_msgs::PoseStamped>("/current_waypoint_goal", 10, true); //Turn on latch so that last published msg would be saved
   distToGoalPub= nh_.advertise<std_msgs::Float32>("/dist_to_goal", 10, true); //Turn on latch so that last published msg would be saved
@@ -136,7 +149,16 @@ void waypointgen_server::gPlanCallback(const nav_msgs::Path &msg) {
 
 //Get wpg_server_status callback
 void waypointgen_server::wpgStatCallback(const waypointgen::wpg_stat &msg) {
-  ROS_INFO_STREAM(msg.status);
+  s_state = msg.status.c_str();
+  s_state_delay = 0;
+  if(s_state=="PLAY"||s_state=="STOP"||s_state=="PAUSE"){
+    s_state_delay = msg.delay;
+    if(s_state_delay<0){s_state_delay=0;}    //Set delay to zero if negative
+    ROS_INFO("Status: %s, Delay (s): %i",s_state,s_state_delay);
+  }else{
+    s_state = "IDLE";
+    ROS_INFO("Status %s not valid!",msg.status.c_str());
+  }
 }
 
 //Publish average of Global path length & Euclidean distance from target if both are non zero
@@ -367,24 +389,40 @@ int main(int argc, char** argv){
   //Load the waypoint list
   wpg.numOfWaypoints = wpg.loadWaypointList(l_path);
 
+  bool showOnce = false;
+  //Wait for topic state "PLAY"
+  while(wpg.s_state!="PLAY"){
+    if(!showOnce){
+      ROS_INFO("Waiting for PLAY cmd from wpg_server_status...");
+      showOnce=true;
+    }
+  }
+
+  //Wait for s_state_delay seconds before starting
+  for(int k=wpg.s_state_delay;k>0;k--){
+    ROS_INFO("Commencing navigation in %3is",k);
+    ros::Duration(1).sleep();
+  }
+  /*
   //Wait for 10s before starting
   int dr = 10;
   for(int k=dr;k>0;k--){
-    ROS_INFO("Commencing navigation in %is",k);
-    ros::Duration(1).sleep();
-  }
+  ROS_INFO("Commencing navigation in %is",k);
+  ros::Duration(1).sleep();
+}
+*/
 
-  //Start Navigation
-  for(int i=0;i<wpg.wpList.size();i++){
-    wpg.currentWaypoint = wpg.wpList.at(i);
-    wpg.p2p(i, wpg.wpList.at(i));
+//Start Navigation
+for(int i=0;i<wpg.wpList.size();i++){
+  wpg.currentWaypoint = wpg.wpList.at(i);
+  wpg.p2p(i, wpg.wpList.at(i));
 
-  }
+}
 
-  ROS_INFO("Completed route!");
+ROS_INFO("Completed route!");
 
 
-  ros::waitForShutdown();
-  //ros::spin();
-  return 0;
+ros::waitForShutdown();
+//ros::spin();
+return 0;
 }

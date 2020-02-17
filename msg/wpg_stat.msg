@@ -1,2 +1,2 @@
 string status
-uint32 delay
+int32 delay
