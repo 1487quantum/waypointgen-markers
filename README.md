@@ -34,7 +34,10 @@ There are 3 options to choose from the context menu (when the marker is _right-c
 - **Generate Waypoint List**: Generate waypoint list to be used in waypoint playback.
 
 
-### Waypoint playback
+### Waypoint Server
+The waypoint server would load the YAML which is specified in the *roslaunch* file, which would then publish the various navigation goals.
+> **Note:** The setpoint_server node subscribes to */move_base/TebLocalPlanner/GlobalPath*, so change it accordingly if TebLocalPlanner Plugin is not used!
+#### Playback
 Launch the playback server via *roslaunch*:
 ```
 $ roslaunch waypointgen setpoint_server.launch  
