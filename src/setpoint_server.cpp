@@ -114,7 +114,10 @@ void waypointgen::goalFeedbackCB(const move_base_msgs::MoveBaseFeedbackConstPtr 
 
   //Calculate displacement from goal
   ecDist = getPathDist(dFromGoal);
-  ROS_INFO("Euclidean distance: %f",ecDist);
+  #ifdef DEBUG
+  //ROS_INFO("Euclidean distance: %f",ecDist);
+  #endif
+
   //ROS_INFO("[X]:%f [Y]:%f [W]: %f",feedback->base_position.pose.position.x,feedback->base_position.pose.position.y,feedback->base_position.pose.orientation.w);
 }
 
@@ -122,7 +125,9 @@ void waypointgen::goalFeedbackCB(const move_base_msgs::MoveBaseFeedbackConstPtr 
 void waypointgen::gPlanCallback(const nav_msgs::Path &msg) {
   std::vector<geometry_msgs::PoseStamped> path_poses = msg.poses;
   gpDist = getPathDist(path_poses);                                   // Calculate path to target waypoint
-  ROS_INFO("Global Path len: %f", gpDist);
+  #ifdef DEBUG
+  //ROS_INFO("Global Path len: %f", gpDist);
+  #endif
 }
 
 //Publish average of Global path length & Euclidean distance from target if both are non zero
@@ -137,7 +142,7 @@ void waypointgen::timerGoalCallback(const ros::TimerEvent& event)
     tgoal.data = (ecDist+gpDist)/2;
   }
   distToGoalPub.publish(tgoal);
-  ROS_INFO("Avg distance: %f",tgoal.data);
+  //ROS_INFO("Avg distance: %f",tgoal.data);
 }
 
 //Calculate path length
@@ -169,6 +174,7 @@ int waypointgen::loadWaypointList(std::string list_path){
 
   //Load YAML
   YAML::Node node = YAML::Load(yml_content);
+
   #ifdef DEBUG
   //ROS_INFO_STREAM(node.Type()<<","<<node.size()<<","<<node.IsSequence());
   #endif
