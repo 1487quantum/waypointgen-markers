@@ -154,7 +154,9 @@ void waypointgen_server::wpgStatCallback(const waypointgen::wpg_stat &msg) {
   if(s_state=="PLAY"||s_state=="STOP"||s_state=="PAUSE"){
     s_state_delay = msg.delay;
     if(s_state_delay<0){s_state_delay=0;}    //Set delay to zero if negative
-    ROS_INFO("Status: %s, Delay (s): %i",s_state,s_state_delay);
+    //ROS_INFO_STREAM("Status: %s, Delay (s): %i",s_state,s_state_delay);
+    ROS_INFO("Status: %s, Delay (s): %i",msg.status.c_str(),s_state_delay);
+
   }else{
     s_state = "IDLE";
     ROS_INFO("Status %s not valid!",msg.status.c_str());
@@ -392,16 +394,14 @@ int main(int argc, char** argv){
   bool showOnce = false;
   //Wait for topic state "PLAY"
   while(wpg.s_state!="PLAY"){
-    if(!showOnce){
-      ROS_INFO("Waiting for PLAY cmd from wpg_server_status...");
-      showOnce=true;
-    }
+      ROS_INFO("Waiting for PLAY status => wpg_server_status: %s",wpg.s_state.c_str());
+      ros::Duration(1).sleep(); //Wait 1 sec
   }
 
   //Wait for s_state_delay seconds before starting
   for(int k=wpg.s_state_delay;k>0;k--){
     ROS_INFO("Commencing navigation in %3is",k);
-    ros::Duration(1).sleep();
+    ros::Duration(1).sleep(); //Wait 1 sec
   }
   /*
   //Wait for 10s before starting
