@@ -8,15 +8,16 @@ project(waypointgen)
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
-  interactive_markers
-  roscpp
-  tf
-  roslib
-  actionlib
-  geometry_msgs
-  move_base_msgs
-  nav_msgs
-  visualization_msgs
+interactive_markers
+roscpp
+tf
+roslib
+actionlib
+geometry_msgs
+move_base_msgs
+nav_msgs
+visualization_msgs
+message_generation
 )
 
 ## System dependencies are found with CMake's conventions
@@ -59,6 +60,11 @@ set(CMAKE_CXX_FLAGS "-std=c++11 ${CMAKE_CXX_FLAGS}")
 #   DEPENDENCIES actionlib_msgs std_msgs
 # )
 
+add_message_files(
+FILES
+wpg_stat.msg
+)
+
 ## Generate services in the 'srv' folder
 # add_service_files(
 #   FILES
@@ -67,14 +73,14 @@ set(CMAKE_CXX_FLAGS "-std=c++11 ${CMAKE_CXX_FLAGS}")
 # )
 
 ## Generate actions in the 'action' folder
- #add_action_files(
- #DIRECTORY action
+#add_action_files(
+#DIRECTORY action
 #   FILES wpServer.action
- #)
+#)
 
 ## Generate added messages and services with any dependencies listed here
- generate_messages(
-     DEPENDENCIES actionlib_msgs std_msgs
+generate_messages(
+DEPENDENCIES actionlib_msgs std_msgs
 )
 
 
@@ -112,7 +118,7 @@ set(CMAKE_CXX_FLAGS "-std=c++11 ${CMAKE_CXX_FLAGS}")
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES waypointgen
-  CATKIN_DEPENDS interactive_markers roscpp tf visualization_msgs actionlib_msgs
+CATKIN_DEPENDS interactive_markers roscpp tf visualization_msgs actionlib_msgs
 #  DEPENDS system_lib
 )
 
@@ -144,17 +150,17 @@ include_directories(include ${catkin_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS})
 add_executable(setpoint_marker src/setpoint_marker.cpp)
 # Uses yaml for parsing
 target_link_libraries(setpoint_marker
-   ${catkin_LIBRARIES}  yaml-cpp
+${catkin_LIBRARIES}  yaml-cpp
 )
 
 add_executable(setpoint_server src/setpoint_server.cpp)
 target_link_libraries(setpoint_server
-   ${catkin_LIBRARIES}  yaml-cpp
+${catkin_LIBRARIES}  yaml-cpp
 )
 
 
 add_dependencies(
-  setpoint_marker setpoint_server ${${PROJECT_NAME}_EXPORTED_TARGETS}
+setpoint_marker setpoint_server ${${PROJECT_NAME}_EXPORTED_TARGETS}
 )
 
 ## Rename C++ executable without prefix

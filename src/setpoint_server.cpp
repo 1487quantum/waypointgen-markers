@@ -16,18 +16,20 @@
 #include <move_base_msgs/MoveBaseGoal.h>
 #include <move_base_msgs/MoveBaseResult.h>
 
+#include "waypointgen/wpg_stat.h"
+
 #define DEBUG 1
 #define PI 3.1415926535897932385
 
-class waypointgen{
+class waypointgen_server{
 
 private:
   //  typedef boost::shared_ptr<const geometry_msgs::PoseStamped> PoseConstPtr;
   typedef actionlib::SimpleActionClient<move_base_msgs::MoveBaseAction> MoveBaseClient;
 
   //Subscriber
-  ros::Subscriber posCurrentSub;    // Subscribe to robot_pose
   ros::Subscriber gPlanSub;         // Subscribe to global path plan by TebLocalPlanner
+  ros::Subscriber wpgStatSub;       // Subscribe to /wpg_server_status topic of type wpg_stat message
 
   //Publisher
   ros::Publisher pointPubGoal;          // publish waypoint_goal
@@ -41,7 +43,6 @@ private:
   float ecDist = 0;                 //Euclidean distance from goal
   float gpDist = 0;                 //Global Path distance from goal
 
-
 public:
   ros::NodeHandle nh_;
   std::vector<geometry_msgs::Pose> wpList;      //Waypoint listed
@@ -51,19 +52,34 @@ public:
   int numOfWaypoints = 0;
   float distToGoal =0;
 
+  //Status of server
+  /*
+  Server would have 5 states:
+  PLAY-> Run the server
+  STOP-> Stop the server
+  PAUSE -> Pause server
+  //Below 2 are not callable by topic
+  IDLE->Wait for wpg_server_status topic
+  DONE->Server complete waypoint list
+  */
+
+  std::string s_state="WAIT";
+  int s_state_delay=0;   //Delay before starting the server play, in seconds
+
   //Constructor
-  waypointgen(std::string name, ros::NodeHandle nh_) {
+  waypointgen_server(std::string name, ros::NodeHandle nh_) {
     this->nh_=nh_;
   }
 
   //Destructor
-  ~waypointgen(void){
+  ~waypointgen_server(void){
   }
 
   void init();
 
   //Callbacks
   void gPlanCallback(const nav_msgs::Path &msg);
+  void wpgStatCallback(const waypointgen::wpg_stat &msg);
   void timerGoalCallback(const ros::TimerEvent& event);
 
   //Move base action callback
@@ -80,26 +96,27 @@ public:
 };
 
 //Start sub and pub
-void waypointgen::init(){
+void waypointgen_server::init(){
   ROS_INFO("Init pub & sub");
 
-  gPlanSub=  nh_.subscribe("/move_base/TebLocalPlannerROS/global_plan", 10, &waypointgen::gPlanCallback, this);
-
+  //Subscriber
+  gPlanSub =  nh_.subscribe("/move_base/TebLocalPlannerROS/global_plan", 10, &waypointgen_server::gPlanCallback, this);
+  wpgStatSub = nh_.subscribe("/wpg_server_status", 10, &waypointgen_server::wpgStatCallback, this);
   //Publisher
   pointPubGoal= nh_.advertise<geometry_msgs::PoseStamped>("/current_waypoint_goal", 10, true); //Turn on latch so that last published msg would be saved
   distToGoalPub= nh_.advertise<std_msgs::Float32>("/dist_to_goal", 10, true); //Turn on latch so that last published msg would be saved
-  timerGoal= nh_.createTimer(ros::Duration(0.2), &waypointgen::timerGoalCallback,this);
+  timerGoal= nh_.createTimer(ros::Duration(0.2), &waypointgen_server::timerGoalCallback,this);
 }
 
 
 //Callbacks
 //move_base_action CB
-void waypointgen::goalDoneCB(const actionlib::SimpleClientGoalState& state, const move_base_msgs::MoveBaseResultConstPtr& msg){
+void waypointgen_server::goalDoneCB(const actionlib::SimpleClientGoalState& state, const move_base_msgs::MoveBaseResultConstPtr& msg){
   ROS_INFO("Finished in state [%s]", state.toString().c_str());
 }
 
 //Get current location
-void waypointgen::goalFeedbackCB(const move_base_msgs::MoveBaseFeedbackConstPtr &feedback){
+void waypointgen_server::goalFeedbackCB(const move_base_msgs::MoveBaseFeedbackConstPtr &feedback){
   float dispFromGoal; //Displacement from goal
 
   std::vector<geometry_msgs::PoseStamped> dFromGoal;
@@ -122,7 +139,7 @@ void waypointgen::goalFeedbackCB(const move_base_msgs::MoveBaseFeedbackConstPtr 
 }
 
 //Get global path length
-void waypointgen::gPlanCallback(const nav_msgs::Path &msg) {
+void waypointgen_server::gPlanCallback(const nav_msgs::Path &msg) {
   std::vector<geometry_msgs::PoseStamped> path_poses = msg.poses;
   gpDist = getPathDist(path_poses);                                   // Calculate path to target waypoint
   #ifdef DEBUG
@@ -130,8 +147,24 @@ void waypointgen::gPlanCallback(const nav_msgs::Path &msg) {
   #endif
 }
 
+//Get wpg_server_status callback
+void waypointgen_server::wpgStatCallback(const waypointgen::wpg_stat &msg) {
+  s_state = msg.status.c_str();
+  s_state_delay = 0;
+  if(s_state=="PLAY"||s_state=="STOP"||s_state=="PAUSE"){
+    s_state_delay = msg.delay;
+    if(s_state_delay<0){s_state_delay=0;}    //Set delay to zero if negative
+    //ROS_INFO_STREAM("Status: %s, Delay (s): %i",s_state,s_state_delay);
+    ROS_INFO("Status: %s, Delay (s): %i",msg.status.c_str(),s_state_delay);
+
+  }else{
+    s_state = "IDLE";
+    ROS_INFO("Status %s not valid!",msg.status.c_str());
+  }
+}
+
 //Publish average of Global path length & Euclidean distance from target if both are non zero
-void waypointgen::timerGoalCallback(const ros::TimerEvent& event)
+void waypointgen_server::timerGoalCallback(const ros::TimerEvent& event)
 {
   std_msgs::Float32 tgoal;
   if(ecDist==0){
@@ -146,7 +179,7 @@ void waypointgen::timerGoalCallback(const ros::TimerEvent& event)
 }
 
 //Calculate path length
-float waypointgen::getPathDist(std::vector<geometry_msgs::PoseStamped> pathVector){
+float waypointgen_server::getPathDist(std::vector<geometry_msgs::PoseStamped> pathVector){
   float dst = 0;
   //Get num of path points
   int sz = pathVector.size();
@@ -167,7 +200,7 @@ YAML Parsing
 */
 
 //Load and parse the waypoint list, return number of waypoints
-int waypointgen::loadWaypointList(std::string list_path){
+int waypointgen_server::loadWaypointList(std::string list_path){
   //Open yaml file, parse it as string
   std::ifstream ifs(list_path);
   std::string yml_content( (std::istreambuf_iterator<char>(ifs) ),(std::istreambuf_iterator<char>()) );
@@ -245,7 +278,7 @@ int waypointgen::loadWaypointList(std::string list_path){
 }
 
 //Adds timestamps to poses, converts pose to poseStamped: poseTarget -> poseStamped
-geometry_msgs::PoseStamped waypointgen::convertToPoseStamped(std::string poseFrameID, geometry_msgs::Pose poseTarget){
+geometry_msgs::PoseStamped waypointgen_server::convertToPoseStamped(std::string poseFrameID, geometry_msgs::Pose poseTarget){
   geometry_msgs::PoseStamped poseStamped;
 
   //Create waypoint header
@@ -265,7 +298,7 @@ geometry_msgs::PoseStamped waypointgen::convertToPoseStamped(std::string poseFra
 }
 
 //Point to point navigation
-void waypointgen::p2p(int currentWP, geometry_msgs::Pose qpt){
+void waypointgen_server::p2p(int currentWP, geometry_msgs::Pose qpt){
   //tell the action client that we want to spin a thread by default
   MoveBaseClient ac("move_base", true);
   ROS_INFO("Moving out soon...");
@@ -308,7 +341,7 @@ void waypointgen::p2p(int currentWP, geometry_msgs::Pose qpt){
   ROS_INFO("Sending next goal [%i/%i]: (%.2f,%.2f, %.2f)",currentWP+1, wp_count, qpt.position.x,qpt.position.y,yaw);
 
   //ac.sendGoal(goal,boost::bind(&waypointgen::goalDoneCB, this,_1,_2),MoveBaseClient::SimpleActiveCallback(), MoveBaseClient::SimpleFeedbackCallback());
-  ac.sendGoal(goal,boost::bind(&waypointgen::goalDoneCB, this,_1,_2),MoveBaseClient::SimpleActiveCallback(), boost::bind(&waypointgen::goalFeedbackCB, this,_1));
+  ac.sendGoal(goal,boost::bind(&waypointgen_server::goalDoneCB, this,_1,_2),MoveBaseClient::SimpleActiveCallback(), boost::bind(&waypointgen_server::goalFeedbackCB, this,_1));
 
   //Publish current waypoint goal
   pointPubGoal.publish(goalPose);
@@ -330,7 +363,7 @@ void waypointgen::p2p(int currentWP, geometry_msgs::Pose qpt){
 int main(int argc, char** argv){
   ros::init(argc, argv, "setpoint_server");
   ros::NodeHandle n("~");
-  waypointgen wpg("WPG",n);
+  waypointgen_server wpg("WPG",n);
   wpg.init();
 
   //Start Multithreading Process(Async thread): http://wiki.ros.org/roscpp/Overview/Callbacks%20and%20Spinning
@@ -358,24 +391,38 @@ int main(int argc, char** argv){
   //Load the waypoint list
   wpg.numOfWaypoints = wpg.loadWaypointList(l_path);
 
+  bool showOnce = false;
+  //Wait for topic state "PLAY"
+  while(wpg.s_state!="PLAY"){
+      ROS_INFO("Waiting for PLAY status => wpg_server_status: %s",wpg.s_state.c_str());
+      ros::Duration(1).sleep(); //Wait 1 sec
+  }
+
+  //Wait for s_state_delay seconds before starting
+  for(int k=wpg.s_state_delay;k>0;k--){
+    ROS_INFO("Commencing navigation in %3is",k);
+    ros::Duration(1).sleep(); //Wait 1 sec
+  }
+  /*
   //Wait for 10s before starting
   int dr = 10;
   for(int k=dr;k>0;k--){
-    ROS_INFO("Commencing navigation in %is",k);
-    ros::Duration(1).sleep();
-  }
+  ROS_INFO("Commencing navigation in %is",k);
+  ros::Duration(1).sleep();
+}
+*/
 
-  //Start Navigation
-  for(int i=0;i<wpg.wpList.size();i++){
-    wpg.currentWaypoint = wpg.wpList.at(i);
-    wpg.p2p(i, wpg.wpList.at(i));
+//Start Navigation
+for(int i=0;i<wpg.wpList.size();i++){
+  wpg.currentWaypoint = wpg.wpList.at(i);
+  wpg.p2p(i, wpg.wpList.at(i));
 
-  }
+}
 
-  ROS_INFO("Completed route!");
+ROS_INFO("Completed route!");
 
 
-  ros::waitForShutdown();
-  //ros::spin();
-  return 0;
+ros::waitForShutdown();
+//ros::spin();
+return 0;
 }
