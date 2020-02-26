@@ -52,6 +52,8 @@ By default, the server would not start until the s_state = "PLAY".
 ```
 [ INFO] [1581956954.202074110]: Waiting for PLAY cmd from wpg_server_status...
 ```
+> **Note:** Ensure that the status are in UPPERCASE! E.g. _"STOP"_, not _"Stop"_.
+
 To start the server, publish the *wpg_server_status* topic with <kbd>*wpg_stat*</kbd> message type. (Check it out in the */msg* dir!)
 ```bash
 $ rostopic pub /wpg_server_status wayintgen/wpg_stat "status: 'PLAY'
@@ -59,6 +61,6 @@ delay: <Delay in seconds>"
 ```
 For example, the following line below would send out the waypoint goals 10s after initialisation.
 ```bash
-$ rostopic pub /wpg_server_status wayintgen/wpg_stat "status: 'Play'
+$ rostopic pub /wpg_server_status wayintgen/wpg_stat "status: 'PLAY'
 delay: 100" 
 ```
