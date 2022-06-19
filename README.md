@@ -67,3 +67,13 @@ For example, the following line below would send out the waypoint goals 10s afte
 $ rostopic pub /wpg_server_status wayintgen/wpg_stat "status: 'PLAY'
 delay: 100" 
 ```
+## Changelog
+
+### v0.1.0
+
+- Initial commit.
+
+### v0.1.1
+
+- Refactor setpoint_marker.
+- Add ROS CI.
