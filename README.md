@@ -1,4 +1,7 @@
 # waypointgen
+
+[![ROS CI](https://github.com/1487quantum/waypointgen/actions/workflows/ros_ci.yml/badge.svg?branch=master)](https://github.com/1487quantum/waypointgen/actions/workflows/ros_ci.yml)
+
 A waypoint generator (using InteractiveMarkers in Rviz) and a waypoint server for waypoint playback. The waypoints are saved as a **YAML** file.
 
 ## Usage
