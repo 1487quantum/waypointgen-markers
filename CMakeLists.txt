@@ -53,7 +53,7 @@ DEPENDENCIES actionlib_msgs std_msgs
 ## DEPENDS: system dependencies of this project that dependent projects also need
 
 catkin_package(
-#  INCLUDE_DIRS include
+ INCLUDE_DIRS include
 #  LIBRARIES waypointgen
 CATKIN_DEPENDS interactive_markers roscpp tf visualization_msgs actionlib_msgs
 #  DEPENDS system_lib
@@ -65,16 +65,31 @@ CATKIN_DEPENDS interactive_markers roscpp tf visualization_msgs actionlib_msgs
 
 include_directories(include ${catkin_INCLUDE_DIRS})
 
+add_library(wpg_utils src/waypointgen_utils.cpp)
+target_link_libraries(wpg_utils ${catkin_LIBRARIES})
+add_dependencies(wpg_utils ${wpg_utils_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+
 add_executable(setpoint_marker src/setpoint_marker.cpp)
-target_link_libraries(setpoint_marker
-${catkin_LIBRARIES}  yaml-cpp
+target_link_libraries(
+    setpoint_marker
+    ${catkin_LIBRARIES} 
+    yaml-cpp
+    wpg_utils
 )
 
 add_executable(setpoint_server src/setpoint_server.cpp)
-target_link_libraries(setpoint_server
-${catkin_LIBRARIES}  yaml-cpp
+target_link_libraries(
+    setpoint_server
+    ${catkin_LIBRARIES}
+    yaml-cpp
 )
 
 add_dependencies(
 setpoint_marker setpoint_server ${${PROJECT_NAME}_EXPORTED_TARGETS}
+)
+
+## Mark executables and/or libraries for installation
+install(
+    TARGETS wpg_utils
+    LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
 )

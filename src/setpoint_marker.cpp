@@ -17,6 +17,8 @@
 #include <map>
 #include <yaml-cpp/yaml.h>
 
+#include "waypointgen/waypointgen_utils.h"
+
 #define DEBUG 1
 
 typedef std::map<std::string, geometry_msgs::PoseWithCovariance> p_map;
@@ -38,17 +40,15 @@ ros::Subscriber sub_setpoint_list;
 interactive_markers::MenuHandler menu_handler;
 auto menuInit{false};
 
+waypointgen_utils wpg_utils;
+
 void updateWypt(p_map &tmp, const std::string &wp_name,
                 const geometry_msgs::PoseWithCovariance &pt);
 void addWaypointMarker(const unsigned int &mrk_id);
-void printDebugPose(const std::string &dmsg, const std::string &wp_name,
-                    const geometry_msgs::PoseWithCovariance &pw);
+
 // Sub/Pub
 void updateWaypointPos(
     const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback);
-
-void set_pose_position(geometry_msgs::Point &from_point,
-                       const geometry_msgs::Point &to_point);
 
 void setpointListCallback(
     const visualization_msgs::InteractiveMarkerInitConstPtr msg);
@@ -76,33 +76,8 @@ void addMovementControl(visualization_msgs::InteractiveMarkerControl &im_c,
                         const bool &mvAxis);
 void addMotionControl(visualization_msgs::InteractiveMarker &i_mk,
                       visualization_msgs::InteractiveMarkerControl &imc_am);
-// Export
-geometry_msgs::PoseWithCovariance addPoseCov(const geometry_msgs::Point &pt,
-                                             const tf::Quaternion &q_rotate);
 
-std::string getCurrentTime();
 void updateWPList(p_map &tmp);
-
-// Get current time
-std::string getCurrentTime() {
-  std::time_t now = time(nullptr);
-  std::tm ltm = *std::localtime(&now); // tm -> timestruct
-  std::stringstream buf;
-  buf << std::put_time(&ltm, "%d%m%Y_%H%M%S");
-  return buf.str(); // ddMMYYYY_hhmmss
-}
-
-// Param: position,orientation
-geometry_msgs::PoseWithCovariance addPoseCov(const geometry_msgs::Point &pt,
-                                             const tf::Quaternion &q_rotate) {
-  geometry_msgs::Quaternion quat_msg;
-  quaternionTFToMsg(q_rotate, quat_msg);
-
-  geometry_msgs::PoseWithCovariance cov_pose;
-  cov_pose.pose.position = pt;
-  cov_pose.pose.orientation = quat_msg;
-  return cov_pose;
-}
 
 void updateWaypointPos(
     const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback) {
@@ -124,38 +99,20 @@ void updateWaypointPos(
     lastMarker[1] = feedback->pose.position.y;
 
     geometry_msgs::Point p_point;
-    set_pose_position(p_point, feedback->pose.position);
+    wpg_utils.set_pose_position(p_point, feedback->pose.position);
 
     tf::Quaternion p_quat(
         feedback->pose.orientation.x, feedback->pose.orientation.y,
         feedback->pose.orientation.z,
         feedback->pose.orientation.w); // change geometry to tf quaternion
 
-    auto pwc = addPoseCov(
+    auto pwc = wpg_utils.addPoseCov(
         p_point,
         p_quat); // Update pose in map, geometry_msgs::PoseWithCovariance
 
     updateWypt(wpl, feedback->marker_name, pwc);
     server->applyChanges();
   }
-}
-
-void set_pose_position(geometry_msgs::Point &from_point,
-                       const geometry_msgs::Point &to_point) {
-  from_point.x = to_point.x;
-  from_point.y = to_point.y;
-  from_point.z = to_point.z;
-}
-
-void printDebugPose(const std::string &dmsg, const std::string &wp_name,
-                    const geometry_msgs::PoseWithCovariance &pw) {
-  tf::Quaternion q(pw.pose.orientation.x, pw.pose.orientation.y,
-                   pw.pose.orientation.z, pw.pose.orientation.w);
-  double roll, pitch, yaw;
-  tf::Matrix3x3 m(q);
-  m.getRPY(roll, pitch, yaw);
-  ROS_INFO("[%s] %s(x,y,ang) -> %f, %f, %f", dmsg.c_str(), wp_name.c_str(),
-           pw.pose.position.x, pw.pose.position.y, yaw * 180 / 3.1415927);
 }
 
 // Subscriber callback
@@ -173,10 +130,10 @@ void setpointListCallback(
         mk.pose.orientation.x, mk.pose.orientation.y, mk.pose.orientation.z,
         mk.pose.orientation
             .w); // Create Quaternion for rotation, tf::Quaternion
-    pt = addPoseCov(p_point, qtmp); // Create pose
+    pt = wpg_utils.addPoseCov(p_point, qtmp); // Create pose
     updateWypt(wpl, mk.name, pt);   // Add to map
     if (DEBUG)
-      printDebugPose("LIST SUB CALLBACK", mk.name, pt);
+      wpg_utils.printDebugPose("LIST SUB CALLBACK", mk.name, pt);
   }
 }
 
@@ -197,7 +154,7 @@ void updateWypt(p_map &tmp, const std::string &wp_name,
   } else {
     tmp.insert(std::make_pair(wp_name, pt));
     if (DEBUG)
-      printDebugPose("INSERT WAYPONT", wp_name, pt);
+      wpg_utils.printDebugPose("INSERT WAYPONT", wp_name, pt);
   }
 }
 
@@ -205,14 +162,14 @@ void updateWypt(p_map &tmp, const std::string &wp_name,
 void mnu_getLocation(
     const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback) {
   geometry_msgs::PoseWithCovariance pwc_gl;
-  set_pose_position(pwc_gl.pose.position, feedback->pose.position);
+  wpg_utils.set_pose_position(pwc_gl.pose.position, feedback->pose.position);
 
   pwc_gl.pose.orientation.x = feedback->pose.orientation.x;
   pwc_gl.pose.orientation.y = feedback->pose.orientation.y;
   pwc_gl.pose.orientation.z = feedback->pose.orientation.z;
   pwc_gl.pose.orientation.w = feedback->pose.orientation.w;
   // To display on console
-  printDebugPose("CURRENT LOC", feedback->marker_name, pwc_gl);
+  wpg_utils.printDebugPose("CURRENT LOC", feedback->marker_name, pwc_gl);
 }
 
 // Add waypoint
@@ -295,7 +252,7 @@ void mnu_createList(
   if (std::filesystem::create_directory(dir))
     ROS_INFO("'list' directory not found, creating one -> %s", loc.c_str());
 
-  auto lstName = getCurrentTime() + "_wplist.yaml"; // File Name
+  auto lstName = wpg_utils.getCurrentTime() + "_wplist.yaml"; // File Name
   loc += lstName;                                   // Append to main path
   if (DEBUG)
     ROS_INFO("Writing waypoint list to %s", loc.c_str());
@@ -463,6 +420,7 @@ void addWaypointMarker(const unsigned int &mrk_id) {
 
 int main(int argc, char **argv) {
   ros::init(argc, argv, "setpoint_marker");
+
   server.reset(new interactive_markers::InteractiveMarkerServer(
       "setpoint_marker", "", false));
 
