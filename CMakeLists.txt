@@ -3,6 +3,8 @@ project(waypointgen)
 
 add_compile_options(-std=c++17)
 
+find_package(Boost REQUIRED COMPONENTS system)
+
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
@@ -63,7 +65,7 @@ CATKIN_DEPENDS interactive_markers roscpp tf visualization_msgs actionlib_msgs
 ## Build ##
 ###########
 
-include_directories(include ${catkin_INCLUDE_DIRS})
+include_directories(include ${catkin_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS})
 
 add_library(wpg_utils src/waypointgen_utils.cpp)
 target_link_libraries(wpg_utils ${catkin_LIBRARIES})
@@ -76,6 +78,9 @@ target_link_libraries(
     yaml-cpp
     wpg_utils
 )
+add_dependencies(
+    setpoint_marker ${${PROJECT_NAME}_EXPORTED_TARGETS}
+)
 
 add_executable(setpoint_server src/setpoint_server.cpp)
 target_link_libraries(
@@ -83,10 +88,13 @@ target_link_libraries(
     ${catkin_LIBRARIES}
     yaml-cpp
 )
-
 add_dependencies(
-setpoint_marker setpoint_server ${${PROJECT_NAME}_EXPORTED_TARGETS}
+    setpoint_server ${${PROJECT_NAME}_EXPORTED_TARGETS}
 )
+
+
+
+
 
 ## Mark executables and/or libraries for installation
 install(
