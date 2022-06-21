@@ -243,8 +243,12 @@ geometry_msgs::PoseStamped waypointgen_server::convertToPoseStamped(
   poseStamped.header.stamp = ros::Time::now();
 
   poseStamped.pose.position = poseTarget.position; // Set position
+
+  tf::Quaternion q;
+  q.setRPY(0, 0, PI); // rotate by pi (offset)
+
   poseStamped.pose.orientation =
-      poseTarget.orientation; // Set rotation (Quaternion)
+      poseTarget.orientation * q; // Set rotation (Quaternion)
 
   return poseStamped;
 }
