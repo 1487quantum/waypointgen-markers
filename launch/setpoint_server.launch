@@ -1,5 +1,7 @@
 <launch>
+  <arg name="list_path" default="$(find waypointgen)/wp_list/a.yaml" />
+
   <node pkg="waypointgen" type="setpoint_server" respawn="false" name="setpoint_server" output="screen">
-    <param name="pathway" type="str" value="a.yaml"/>
+    <param name="waypoint_listpath" type="str" value="$(arg list_path)"/>
   </node>
 </launch>
