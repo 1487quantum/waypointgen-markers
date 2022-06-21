@@ -2,6 +2,7 @@
 
 #include <actionlib/client/simple_action_client.h>
 #include <actionlib/client/simple_client_goal_state.h>
+#include <string>
 #include <tf/tf.h>
 
 #include <geometry_msgs/PoseArray.h>
@@ -111,6 +112,8 @@ private:
   ros::Publisher distToGoalPub; // publish distance to goal
 
   ros::NodeHandle nh_;
+
+  std::string global_path_topic;
 
   int numOfWaypoints;
   float distToGoal;

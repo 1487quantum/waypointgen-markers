@@ -2,7 +2,8 @@
 
 waypointgen_server::waypointgen_server(ros::NodeHandle nh)
     : wp_count(0), numOfWaypoints(0), distToGoal(0.0), ecDist(0.0), gpDist(0.0),
-      s_state_delay(0), current_state(ServerState::IDLE) {
+      s_state_delay(0), current_state(ServerState::IDLE),
+      global_path_topic("/move_base/TebLocalPlannerROS/global_plan") {
   this->nh_ = nh;
 }
 
@@ -15,7 +16,20 @@ int waypointgen_server::init() {
                                         &waypointgen_server::start_p2p, this);
 
   // Subscriber
-  gPlanSub = nh_.subscribe("/move_base/TebLocalPlannerROS/global_plan", 10,
+
+  // Check if global_plan_topic param specified
+  auto gp_name{"global_plan_topic"};
+  if (!get_nh()->hasParam(gp_name)) {
+    ROS_ERROR("No param named '%s' found, using "
+              "/move_base/TebLocalPlannerROS/global_plan as global path "
+              "planner instead...",
+              gp_name);
+  } else {
+    get_nh()->getParam(gp_name, global_path_topic);
+    ROS_INFO("Setting global path topic -> %s", global_path_topic.c_str());
+  }
+
+  gPlanSub = nh_.subscribe(global_path_topic, 10,
                            &waypointgen_server::gPlanCallback, this);
 
   // Publisher
@@ -215,6 +229,7 @@ int waypointgen_server::loadWaypointList(const std::string &list_path) {
   // // Check list values
   // for (const auto &i : wpList)
   //   ROS_INFO_STREAM('\n' << i);
+  return wp_count;
 }
 
 // Adds timestamps to poses, converts pose to poseStamped: poseTarget ->
