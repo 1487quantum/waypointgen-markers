@@ -14,6 +14,8 @@
 #include <nav_msgs/Path.h>
 #include <std_msgs/Float32.h>
 
+#include <thread>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <yaml-cpp/yaml.h>
@@ -34,15 +36,13 @@ public:
 
   // Status of server
   /*
-  Server would have 5 states:
+  Server would have 4 states:
   PLAY-> Run the server
   STOP-> Stop the server
   PAUSE -> Pause server
-  //Below 2 are not callable by topic
   IDLE->Wait for wpg_server_status topic
-  DONE->Server complete waypoint list
   */
-  enum class ServerState { PLAY, STOP, PAUSE, IDLE, DONE };
+  enum class ServerState { PLAY, STOP, PAUSE, IDLE };
 
   // Callbacks
   bool start_p2p(waypointgen::Trigger::Request &req,
@@ -89,13 +89,16 @@ public:
     return &this->currentWaypoint;
   }
 
+  // Timer
+  void reset_timer();
+  double elapsed_time();
+
   // Play back
-  void p2p(const int &currentWP,
+  bool p2p(const int &currentWP,
            const geometry_msgs::Pose &qpt); // Point 2 Point
   void begin_playback();
 
 private:
-
   typedef actionlib::SimpleActionClient<move_base_msgs::MoveBaseAction>
       MoveBaseClient;
 
@@ -125,6 +128,8 @@ private:
   ros::Timer timerGoal; // Refresh and get distance to goal
   float ecDist;         // Euclidean distance from goal
   float gpDist;         // Global Path distance from goal
+  float ecDistMax;      // Euclidean distance from goal, Max
+  float gpDistMax;      // Global Path distance from goal, Max
 
   ServerState current_state;
   int s_state_delay; // Delay before starting the server play, in
@@ -132,4 +137,13 @@ private:
 
   std::vector<geometry_msgs::Pose> wpList; // Waypoint listed
   geometry_msgs::Pose currentWaypoint;     // current waypoint
+
+  // Timer for benchmarking
+  using clock_type = std::chrono::steady_clock;
+  using d_type = std::chrono::duration<double, std::ratio<1>>;
+
+  std::chrono::time_point<clock_type> path_timer{clock_type::now()};
+
+  //Benchmark vals
+  std::vector<bool> wpt_benchmark_success;
 };

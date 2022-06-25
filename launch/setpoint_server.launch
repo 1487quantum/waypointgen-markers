@@ -1,7 +1,6 @@
 <launch>
   <arg name="list_path" default="$(find waypointgen)/wp_list/a.yaml" />
-  <arg name="globalplan_topic" default="/move_base/TebLocalPlannerROS/global_plan" />
-
+  <arg name="globalplan_topic" default="/move_base/NavfnROS/plan" />  <!-- global path planner, not local -->
 
   <node pkg="waypointgen" type="setpoint_server" respawn="false" name="setpoint_server" output="screen">
     <param name="waypoint_listpath" type="str" value="$(arg list_path)"/>

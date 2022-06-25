@@ -1,8 +1,9 @@
 #include "waypointgen/setpoint_server.h"
+#include <vector>
 
 waypointgen_server::waypointgen_server(ros::NodeHandle nh)
     : wp_count(0), numOfWaypoints(0), distToGoal(0.0), ecDist(0.0), gpDist(0.0),
-      s_state_delay(0), current_state(ServerState::IDLE),
+      s_state_delay(0), current_state(ServerState::IDLE), gpDistMax(-1.0),
       global_path_topic("/move_base/TebLocalPlannerROS/global_plan") {
   this->nh_ = nh;
 }
@@ -77,7 +78,6 @@ bool waypointgen_server::start_p2p(waypointgen::Trigger::Request &req,
     set_s_state_delay(req.play_delay);
     res.play_triggered = true;
     ROS_INFO("Setting [%d] delay before playback", req.play_delay);
-
     begin_playback();
   }
   return true;
@@ -108,9 +108,9 @@ void waypointgen_server::goalFeedbackCB(
 
   // Calculate displacement from goal
   ecDist = getPathDist(dFromGoal);
-#ifdef DEBUG
-// ROS_INFO("Euclidean distance: %f",ecDist);
-#endif
+  if (ecDist > ecDistMax)
+    ecDistMax = ecDist;
+  // ROS_INFO("Euclidean distance: %f", ecDist);
 
   // ROS_INFO("[X]:%f [Y]:%f [W]:
   // %f",feedback->base_position.pose.position.x,feedback->base_position.pose.position.y,feedback->base_position.pose.orientation.w);
@@ -120,22 +120,23 @@ void waypointgen_server::goalFeedbackCB(
 void waypointgen_server::gPlanCallback(const nav_msgs::Path &msg) {
   std::vector<geometry_msgs::PoseStamped> path_poses = msg.poses;
   gpDist = getPathDist(path_poses); // Calculate path to target waypoint
-#ifdef DEBUG
-// ROS_INFO("Global Path len: %f", gpDist);
-#endif
+  if (gpDist > gpDistMax)
+    gpDistMax = gpDist;
+
+  // ROS_INFO("Global Path len: %f", gpDist);
 }
 
 // Publish average of Global path length & Euclidean distance from target if
 // both are non zero
 void waypointgen_server::timerGoalCallback(const ros::TimerEvent &event) {
   std_msgs::Float32 tgoal;
-  if (ecDist == 0) {
+  if (ecDist == 0)
     tgoal.data = gpDist;
-  } else if (gpDist == 0) {
+  else if (gpDist == 0)
     tgoal.data = ecDist;
-  } else {
+  else
     tgoal.data = (ecDist + gpDist) / 2;
-  }
+
   distToGoalPub.publish(tgoal);
   // ROS_INFO("Avg distance: %f",tgoal.data);
 }
@@ -243,27 +244,35 @@ geometry_msgs::PoseStamped waypointgen_server::convertToPoseStamped(
   poseStamped.header.stamp = ros::Time::now();
 
   poseStamped.pose.position = poseTarget.position; // Set position
-
-  tf::Quaternion q;
-  q.setRPY(0, 0, PI); // rotate by pi (offset)
-
   poseStamped.pose.orientation =
-      poseTarget.orientation * q; // Set rotation (Quaternion)
+      poseTarget.orientation; // Set rotation (Quaternion)
 
   return poseStamped;
 }
 
+// Timer
+void waypointgen_server::reset_timer() { path_timer = clock_type::now(); }
+
+double waypointgen_server::elapsed_time() {
+  return std::chrono::duration_cast<d_type>(clock_type::now() - path_timer)
+      .count();
+}
+
 // Point to point navigation
-void waypointgen_server::p2p(const int &currentWP,
+bool waypointgen_server::p2p(const int &currentWP,
                              const geometry_msgs::Pose &qpt) {
   // tell the action client that we want to spin a thread by default
   MoveBaseClient ac("move_base", true);
-  ROS_INFO("Moving out soon...");
+  // ROS_INFO("Moving out soon...");
 
   // wait for the action server to come up
   while (!ac.waitForServer(ros::Duration(5.0))) {
     ROS_INFO("Waiting for the move_base action server to come up");
   }
+
+  // Reset distance;
+  ecDistMax = 0;
+  gpDistMax = 0;
 
   // Create goal waypoint
   move_base_msgs::MoveBaseGoal goal;
@@ -288,7 +297,7 @@ void waypointgen_server::p2p(const int &currentWP,
   yaw *= 180 / PI; // Convert to degrees
 
   // Current waypoint, total waypoint, x pos, y pos, angular (yaw)
-  ROS_INFO("Sending next goal [%i/%i]: (%.2f,%.2f, %.2f)", currentWP + 1,
+  ROS_INFO(">> Sending next goal [%i/%i]: (%.2f,%.2f, %.2f)", currentWP + 1,
            wp_count, qpt.position.x, qpt.position.y, yaw);
 
   // ac.sendGoal(goal,boost::bind(&waypointgen::goalDoneCB,
@@ -298,21 +307,42 @@ void waypointgen_server::p2p(const int &currentWP,
               MoveBaseClient::SimpleActiveCallback(),
               boost::bind(&waypointgen_server::goalFeedbackCB, this, _1));
 
+  reset_timer(); // Restart timer
+
   // Publish current waypoint goal
   pointPubGoal.publish(goalPose);
 
   ac.waitForResult();
 
-  // wayptCounter++;
+  // Benchmark
+  auto tt{elapsed_time()};
+  auto egp{gpDistMax / ecDistMax};
+  auto isSuccessful{false};
 
+  // todo: Add final dist and ang from goal post when action server returns val,
+  // count num of success/abort
+  std::string results_msg{"<< "};
   if (ac.getState() == actionlib::SimpleClientGoalState::SUCCEEDED) {
-    ROS_INFO("Done!");
+    results_msg += "Reached!";
+    isSuccessful = true;
   } else if (ac.getState() == actionlib::SimpleClientGoalState::LOST) {
-    ROS_INFO("Skipping to next goal");
-    exit(0);
+    results_msg += "Lost, skipping to next goal...";
   } else {
-    ROS_INFO("The base failed to move forward for some reason");
+    results_msg += "The base failed to move forward for some reason";
   }
+
+  ROS_INFO("%s", results_msg.c_str());
+  ROS_INFO("== Results ==");
+  ROS_INFO("Reached goal?\t\t\t\t%s ", isSuccessful ? "Yes" : "No");
+  ROS_INFO("Time taken:\t\t\t\t%.4f s", tt);
+  ROS_INFO("Global Path Distance:\t\t\t%.4f m", gpDistMax);
+  ROS_INFO("Euclidean Path Distance:\t\t\t%.4f m", ecDistMax); // To way point
+  ROS_INFO("Global Path/Euclidean Ratio:\t\t%.4f ", egp);      // Normalised
+  ROS_INFO("Average speed:\t\t\t\t%.4f ms-1",
+           0.5 * (gpDistMax + ecDistMax) / tt);
+  ROS_INFO("==========================");
+
+  return isSuccessful;
 }
 
 void waypointgen_server::begin_playback() {
@@ -325,9 +355,28 @@ void waypointgen_server::begin_playback() {
   // Start Navigation
   for (int i = 0; i < get_wpList()->size(); ++i) {
     set_currentWaypoint(get_wpList()->at(i));
-    p2p(i, *get_currentWaypoint());
+    wpt_benchmark_success.push_back(p2p(i, *get_currentWaypoint()));
   }
 
+  // Print results
+  auto q{0};
+  for (const auto &i : wpt_benchmark_success)
+    q += i;
+  ROS_INFO("Success ratio: %i/%i", q, wpt_benchmark_success.size());
+
+  // ROS_INFO("%s\n== Results ==", results_msg.c_str());
+  // ROS_INFO("Reached goal?\t\t\t\t%s ", isSuccessful ? "Yes" : "No");
+  // ROS_INFO("Time taken:\t\t\t\t%.4f s", tt);
+  // ROS_INFO("Global Path Distance:\t\t\t%.4f m", gpDistMax);
+  // ROS_INFO("Euclidean Path Distance:\t\t%.4f m", ecDistMax); // To way point
+  // ROS_INFO("Global Path/Euclidean Ratio:\t\t%.4f ", egp);    // Normalised
+  // val ROS_INFO("Time / (Euclidean/Global) Ratio:\t%.4f s", tt / egp);
+  // ROS_INFO("Average speed:\t\t\t\t%.4f ms-1",
+  //          0.5 * (gpDistMax + ecDistMax) / tt);
+
+  // ROS_INFO("==========================");
+
+  set_state(waypointgen_server::ServerState::IDLE);
   ROS_INFO("Completed playback!");
 }
 
@@ -340,9 +389,8 @@ int main(int argc, char **argv) {
 
   // Start Multithreading Process(Async thread):
   // http://wiki.ros.org/roscpp/Overview/Callbacks%20and%20Spinning
-  // std::thread::hardware_concurrency -> Returns the number of concurrent
-  // threads supported by the implementation
-  ros::AsyncSpinner spinner(boost::thread::hardware_concurrency());
+
+  ros::AsyncSpinner spinner(std::thread::hardware_concurrency());
   ros::Rate r(10); // Run at 10Hz
 
   spinner.start();
