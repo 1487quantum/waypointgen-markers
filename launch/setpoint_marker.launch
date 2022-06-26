@@ -1,4 +1,8 @@
 <launch>
-  <node pkg="waypointgen" type="setpoint_marker" respawn="false" name="setpoint_marker" output="screen"/>
-  <node pkg="rviz" type="rviz" respawn="false" name="rviz"/>
+  <arg name="show_rviz" default="true" />
+  
+  <node pkg="waypointgen" type="setpoint_marker" respawn="false" name="setpoint_marker" output="screen" />
+  <group if="$(arg show_rviz)">
+    <node pkg="rviz" type="rviz" respawn="false" name="rviz" args="-d $(find waypointgen)/rviz/wp_markers.rviz"/>
+  </group>
 </launch>

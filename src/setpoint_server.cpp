@@ -1,9 +1,8 @@
 #include "waypointgen/setpoint_server.h"
-#include <vector>
 
 waypointgen_server::waypointgen_server(ros::NodeHandle nh)
-    : wp_count(0), numOfWaypoints(0), distToGoal(0.0), ecDist(0.0), gpDist(0.0),
-      s_state_delay(0), current_state(ServerState::IDLE), gpDistMax(-1.0),
+    : wp_count(0), distToGoal(0.0), ecDist(0.0), gpDist(0.0), s_state_delay(0),
+      current_state(ServerState::IDLE), gpDistMax(-1.0),
       global_path_topic("/move_base/TebLocalPlannerROS/global_plan") {
   this->nh_ = nh;
 }
@@ -16,19 +15,10 @@ int waypointgen_server::init() {
   trigger_server = nh_.advertiseService("/trigger_play",
                                         &waypointgen_server::start_p2p, this);
 
-  // Subscriber
+  // Subscribers
 
   // Check if global_plan_topic param specified
-  auto gp_name{"global_plan_topic"};
-  if (!get_nh()->hasParam(gp_name)) {
-    ROS_ERROR("No param named '%s' found, using "
-              "/move_base/TebLocalPlannerROS/global_plan as global path "
-              "planner instead...",
-              gp_name);
-  } else {
-    get_nh()->getParam(gp_name, global_path_topic);
-    ROS_INFO("Setting global path topic -> %s", global_path_topic.c_str());
-  }
+  setGlobalPathTopic(nh_, "global_plan_topic", global_path_topic);
 
   gPlanSub = nh_.subscribe(global_path_topic, 10,
                            &waypointgen_server::gPlanCallback, this);
@@ -55,21 +45,33 @@ int waypointgen_server::init() {
 
   std::string l_path;
   get_nh()->getParam(param_name, l_path);
-  ROS_INFO("Setting waypoint list path -> %s", l_path.c_str());
 
   // Check if valid path
   if (!std::filesystem::exists(l_path)) {
     ROS_ERROR("File at '%s' not found!\nExiting...", l_path.c_str());
     return 0;
   }
+  ROS_INFO("Setting waypoint list path -> %s", l_path.c_str());
 
   set_waypointcount(loadWaypointList(l_path)); // Load the waypoint list
-
   return 1;
 }
 
-// Callbacks
+void waypointgen_server::setGlobalPathTopic(const ros::NodeHandle &n,
+                                            const std::string &param_name,
+                                            std::string &target_topic) {
+  if (!n.hasParam(param_name)) {
+    ROS_ERROR("No param named '%s' found, using "
+              "/move_base/TebLocalPlannerROS/global_plan as global path "
+              "planner instead...",
+              param_name.c_str());
+  } else {
+    n.getParam(param_name, target_topic);
+    ROS_INFO("Setting global path topic -> %s", target_topic.c_str());
+  }
+}
 
+// Callbacks
 bool waypointgen_server::start_p2p(waypointgen::Trigger::Request &req,
                                    waypointgen::Trigger::Response &res) {
   if (*get_state() == waypointgen_server::ServerState::IDLE) {
@@ -93,21 +95,9 @@ void waypointgen_server::goalDoneCB(
 // Get current location
 void waypointgen_server::goalFeedbackCB(
     const move_base_msgs::MoveBaseFeedbackConstPtr &feedback) {
-
-  std::vector<geometry_msgs::PoseStamped> dFromGoal;
-
-  // Insert waypoint goalPose
-  geometry_msgs::PoseStamped poseTemp = convertToPoseStamped(
-      feedback->base_position.header.frame_id, currentWaypoint);
-  dFromGoal.push_back(poseTemp);
-
-  // Insert current position
-  poseTemp = convertToPoseStamped(feedback->base_position.header.frame_id,
-                                  feedback->base_position.pose);
-  dFromGoal.push_back(poseTemp);
-
   // Calculate displacement from goal
-  ecDist = getPathDist(dFromGoal);
+  ecDist = getPathDist(get_currentWaypoint()->position,
+                       feedback->base_position.pose.position);
   if (ecDist > ecDistMax)
     ecDistMax = ecDist;
   // ROS_INFO("Euclidean distance: %f", ecDist);
@@ -118,8 +108,7 @@ void waypointgen_server::goalFeedbackCB(
 
 // Get global path length
 void waypointgen_server::gPlanCallback(const nav_msgs::Path &msg) {
-  std::vector<geometry_msgs::PoseStamped> path_poses = msg.poses;
-  gpDist = getPathDist(path_poses); // Calculate path to target waypoint
+  gpDist = getPathDist(msg.poses); // Calculate path to target waypoint
   if (gpDist > gpDistMax)
     gpDistMax = gpDist;
 
@@ -139,6 +128,15 @@ void waypointgen_server::timerGoalCallback(const ros::TimerEvent &event) {
 
   distToGoalPub.publish(tgoal);
   // ROS_INFO("Avg distance: %f",tgoal.data);
+}
+
+// Calculate path length (point start: 1, point end: 2)
+float waypointgen_server::getPathDist(const geometry_msgs::Point &pointStart,
+                                      const geometry_msgs::Point &pointEnd) {
+  auto path_mag{sqrt(pow((pointEnd.x - pointStart.x), 2) +
+                     pow((pointEnd.y - pointStart.y), 2))};
+  // ROS_INFO("Path len: %f",distToGoal);
+  return path_mag;
 }
 
 // Calculate path length
@@ -169,8 +167,7 @@ int waypointgen_server::loadWaypointList(const std::string &list_path) {
   std::string yml_content((std::istreambuf_iterator<char>(ifs)),
                           (std::istreambuf_iterator<char>()));
 
-  // Load YAML
-  YAML::Node node = YAML::Load(yml_content);
+  YAML::Node node = YAML::Load(yml_content); // Load YAML
 
   // ROS_INFO_STREAM(node.Type()<<","<<node.size()<<","<<node.IsSequence());
 
@@ -233,23 +230,6 @@ int waypointgen_server::loadWaypointList(const std::string &list_path) {
   return wp_count;
 }
 
-// Adds timestamps to poses, converts pose to poseStamped: poseTarget ->
-// poseStamped
-geometry_msgs::PoseStamped waypointgen_server::convertToPoseStamped(
-    const std::string &poseFrameID, const geometry_msgs::Pose &poseTarget) {
-  geometry_msgs::PoseStamped poseStamped;
-
-  // Create waypoint header
-  poseStamped.header.frame_id = poseFrameID; // reference to map
-  poseStamped.header.stamp = ros::Time::now();
-
-  poseStamped.pose.position = poseTarget.position; // Set position
-  poseStamped.pose.orientation =
-      poseTarget.orientation; // Set rotation (Quaternion)
-
-  return poseStamped;
-}
-
 // Timer
 void waypointgen_server::reset_timer() { path_timer = clock_type::now(); }
 
@@ -275,16 +255,12 @@ bool waypointgen_server::p2p(const int &currentWP,
   gpDistMax = 0;
 
   // Create goal waypoint
-  move_base_msgs::MoveBaseGoal goal;
-  goal.target_pose.header.frame_id = "map"; // reference to map
-  goal.target_pose.header.stamp = ros::Time::now();
-  // set pose
-  goal.target_pose.pose.position = qpt.position;
-  goal.target_pose.pose.orientation = qpt.orientation;
+  move_base_msgs::MoveBaseGoal goal_movebase;
+  wpg_utils.add_timestamp(goal_movebase.target_pose, "map", qpt);
 
-  // Goal Pose
-  geometry_msgs::PoseStamped goalPose;
-  goalPose = convertToPoseStamped("map", qpt); // Adds timestamp to goal pose
+  // Goal Pose, add timestamp
+  geometry_msgs::PoseStamped goal_pose;
+  wpg_utils.add_timestamp(goal_pose, "map", qpt);
 
   // Convert Quaternion to Euler Angle
   tf::Quaternion q(qpt.orientation.x, qpt.orientation.y, qpt.orientation.z,
@@ -294,24 +270,20 @@ bool waypointgen_server::p2p(const int &currentWP,
   double roll, pitch, yaw;
   m.getRPY(roll, pitch, yaw);
 
-  yaw *= 180 / PI; // Convert to degrees
+  yaw *= 180 / wpg_utils.PI; // Convert to degrees
 
   // Current waypoint, total waypoint, x pos, y pos, angular (yaw)
   ROS_INFO(">> Sending next goal [%i/%i]: (%.2f,%.2f, %.2f)", currentWP + 1,
            wp_count, qpt.position.x, qpt.position.y, yaw);
 
-  // ac.sendGoal(goal,boost::bind(&waypointgen::goalDoneCB,
-  // this,_1,_2),MoveBaseClient::SimpleActiveCallback(),
-  // MoveBaseClient::SimpleFeedbackCallback());
-  ac.sendGoal(goal, boost::bind(&waypointgen_server::goalDoneCB, this, _1, _2),
+  ac.sendGoal(goal_movebase,
+              boost::bind(&waypointgen_server::goalDoneCB, this, _1, _2),
               MoveBaseClient::SimpleActiveCallback(),
               boost::bind(&waypointgen_server::goalFeedbackCB, this, _1));
 
   reset_timer(); // Restart timer
 
-  // Publish current waypoint goal
-  pointPubGoal.publish(goalPose);
-
+  pointPubGoal.publish(goal_pose); // Publish current waypoint goal
   ac.waitForResult();
 
   // Benchmark
@@ -320,7 +292,6 @@ bool waypointgen_server::p2p(const int &currentWP,
   auto isSuccessful{false};
 
   // todo: Add final dist and ang from goal post when action server returns val,
-  // count num of success/abort
   std::string results_msg{"<< "};
   if (ac.getState() == actionlib::SimpleClientGoalState::SUCCEEDED) {
     results_msg += "Reached!";
@@ -358,43 +329,16 @@ void waypointgen_server::begin_playback() {
     wpt_benchmark_success.push_back(p2p(i, *get_currentWaypoint()));
   }
 
-  // Print results
-  auto q{0};
-  for (const auto &i : wpt_benchmark_success)
-    q += i;
-  ROS_INFO("Success ratio: %i/%i", q, wpt_benchmark_success.size());
+  auto q = [](auto bool_list) {
+    auto j{0};
+    for (const auto &i : bool_list)
+      j += i;
+    return j;
+  };
 
-  // ROS_INFO("%s\n== Results ==", results_msg.c_str());
-  // ROS_INFO("Reached goal?\t\t\t\t%s ", isSuccessful ? "Yes" : "No");
-  // ROS_INFO("Time taken:\t\t\t\t%.4f s", tt);
-  // ROS_INFO("Global Path Distance:\t\t\t%.4f m", gpDistMax);
-  // ROS_INFO("Euclidean Path Distance:\t\t%.4f m", ecDistMax); // To way point
-  // ROS_INFO("Global Path/Euclidean Ratio:\t\t%.4f ", egp);    // Normalised
-  // val ROS_INFO("Time / (Euclidean/Global) Ratio:\t%.4f s", tt / egp);
-  // ROS_INFO("Average speed:\t\t\t\t%.4f ms-1",
-  //          0.5 * (gpDistMax + ecDistMax) / tt);
-
-  // ROS_INFO("==========================");
+  ROS_INFO("Success ratio: %i/%i", q(wpt_benchmark_success),
+           static_cast<int>(wpt_benchmark_success.size())); // Print results
 
   set_state(waypointgen_server::ServerState::IDLE);
   ROS_INFO("Completed playback!");
-}
-
-int main(int argc, char **argv) {
-  ros::init(argc, argv, "setpoint_server");
-  ros::NodeHandle n("~");
-  waypointgen_server wpg(n);
-  if (wpg.init() < 0)
-    return 0;
-
-  // Start Multithreading Process(Async thread):
-  // http://wiki.ros.org/roscpp/Overview/Callbacks%20and%20Spinning
-
-  ros::AsyncSpinner spinner(std::thread::hardware_concurrency());
-  ros::Rate r(10); // Run at 10Hz
-
-  spinner.start();
-
-  ros::waitForShutdown();
-  return 0;
 }

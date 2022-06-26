@@ -14,6 +14,7 @@ roscpp
 tf
 roslib
 actionlib
+std_msgs
 geometry_msgs
 move_base_msgs
 nav_msgs
@@ -21,27 +22,13 @@ visualization_msgs
 message_generation
 )
 
-add_message_files(
-FILES
-wpg_stat.msg
-)
-
-## Generate services in the 'srv' folder
 add_service_files(
   FILES
   Trigger.srv
 )
 
-## Generate actions in the 'action' folder
-#add_action_files(
-#DIRECTORY action
-#   FILES wpServer.action
-#)
-
 ## Generate added messages and services with any dependencies listed here
-generate_messages(
-DEPENDENCIES actionlib_msgs std_msgs
-)
+generate_messages()
 
 ###################################
 ## catkin specific configuration ##
@@ -55,7 +42,7 @@ DEPENDENCIES actionlib_msgs std_msgs
 
 catkin_package(
     INCLUDE_DIRS include
-#  LIBRARIES waypointgen
+    LIBRARIES wpg_utils
     CATKIN_DEPENDS interactive_markers roscpp tf visualization_msgs actionlib_msgs message_runtime
 #  DEPENDS system_lib
 )
@@ -70,26 +57,25 @@ add_library(wpg_utils src/waypointgen_utils.cpp)
 target_link_libraries(wpg_utils ${catkin_LIBRARIES})
 add_dependencies(wpg_utils ${wpg_utils_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
-add_executable(setpoint_marker src/setpoint_marker.cpp)
-target_link_libraries(
-    setpoint_marker
-    ${catkin_LIBRARIES} 
-    yaml-cpp
-    wpg_utils
-)
+add_executable(setpoint_marker src/setpoint_marker.cpp src/setpoint_marker_node.cpp)
+add_executable(setpoint_server src/setpoint_server.cpp src/setpoint_server_node.cpp)
+
 add_dependencies(
     setpoint_marker ${${PROJECT_NAME}_EXPORTED_TARGETS}  ${catkin_EXPORTED_TARGETS}
-)
-
-add_executable(setpoint_server src/setpoint_server.cpp)
-target_link_libraries(
-    setpoint_server
-    ${catkin_LIBRARIES}
-    yaml-cpp
 )
 add_dependencies(
     setpoint_server ${${PROJECT_NAME}_EXPORTED_TARGETS}  ${catkin_EXPORTED_TARGETS}
 )
+
+target_link_libraries(
+    setpoint_marker yaml-cpp wpg_utils ${catkin_LIBRARIES} 
+)
+
+
+target_link_libraries(
+    setpoint_server yaml-cpp wpg_utils ${catkin_LIBRARIES}
+)
+
 
 ## Mark executables and/or libraries for installation
 install(

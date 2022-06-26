@@ -1,27 +1,27 @@
-
-#include <ros/package.h>
-#include <ros/ros.h>
-
-#include <geometry_msgs/Point.h>
-#include <geometry_msgs/PoseWithCovariance.h>
-#include <std_msgs/String.h>
-#include <tf/tf.h>
-#include <tf/transform_datatypes.h>
-
-#include <interactive_markers/interactive_marker_server.h>
-#include <interactive_markers/menu_handler.h>
-#include <visualization_msgs/InteractiveMarkerInit.h>
-
 #include <boost/bind.hpp>
+#include <map>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
-#include <map>
 #include <yaml-cpp/yaml.h>
+
+#include <ros/ros.h>
+#include <ros/package.h>
+
+#include <tf/tf.h>
+#include <tf/transform_datatypes.h>
+
+#include <std_msgs/String.h>
+#include <geometry_msgs/Point.h>
+#include <geometry_msgs/PoseWithCovariance.h>
+#include <visualization_msgs/InteractiveMarkerInit.h>
+
+#include <interactive_markers/interactive_marker_server.h>
+#include <interactive_markers/menu_handler.h>
 
 #include "waypointgen/waypointgen_utils.h"
 
-typedef std::map<std::string, geometry_msgs::PoseWithCovariance> p_map;
+using p_map = std::map<std::string, geometry_msgs::PoseWithCovariance>;
 
 class waypointgen_marker {
 public:

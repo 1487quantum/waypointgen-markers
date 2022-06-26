@@ -1,6 +1,8 @@
 # waypointgen
 
-[![ROS CI](https://github.com/1487quantum/waypointgen/actions/workflows/ros_ci.yml/badge.svg?branch=master)](https://github.com/1487quantum/waypointgen/actions/workflows/ros_ci.yml)
+[![ROS CI](https://img.shields.io/github/workflow/status/1487quantum/waypointgen/ROS%20CI?label=CI&logo=ros&style=for-the-badge)](https://github.com/1487quantum/waypointgen/actions/workflows/ros_ci.yml)
+
+
 
 A waypoint generator (using InteractiveMarkers in Rviz) and a waypoint server for waypoint playback. The waypoints are saved as a **YAML** file.
 
@@ -89,3 +91,11 @@ rosservice call /trigger_play 3
 - Refactored code.
 - Replace ros topic subscription to ros service to trigger playback.
 - Add ROS CI.
+
+### v0.1.2
+
+- Add benchmark metrics.
+- Split into seperate ROS nodes.
+- Refactored code.
+- Removed custom msg.
+- Update launch files.

@@ -42,7 +42,7 @@ void waypointgen_marker::updateWaypointPos(
     lastMarker[1] = feedback->pose.position.y;
 
     geometry_msgs::Point p_point;
-    wpg_utils.set_pose_position(p_point, feedback->pose.position);
+    p_point = feedback->pose.position;
 
     tf::Quaternion p_quat(
         feedback->pose.orientation.x, feedback->pose.orientation.y,
@@ -65,8 +65,7 @@ void waypointgen_marker::setpointListCallback(
   updateWPList(wpl);
   for (auto mk : msg->markers) {
     geometry_msgs::Point p_point;
-    p_point.x = mk.pose.position.x;
-    p_point.y = mk.pose.position.y;
+    p_point = mk.pose.position;
     p_point.z = 0.0;
 
     tf::Quaternion qtmp(
@@ -93,7 +92,8 @@ void waypointgen_marker::updateWypt(
     p_map &tmp, const std::string &wp_name,
     const geometry_msgs::PoseWithCovariance &pt) {
   if (tmp.insert(std::make_pair(wp_name, pt)).second == false) {
-    ROS_WARN("Overwriting %s", wp_name.c_str());
+    if (DEBUG)
+      ROS_WARN("Overwriting %s", wp_name.c_str());
     tmp[wp_name] = pt;
   } else {
     tmp.insert(std::make_pair(wp_name, pt));
@@ -106,14 +106,9 @@ void waypointgen_marker::updateWypt(
 void waypointgen_marker::mnu_getLocation(
     const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback) {
   geometry_msgs::PoseWithCovariance pwc_gl;
-  wpg_utils.set_pose_position(pwc_gl.pose.position, feedback->pose.position);
-
-  pwc_gl.pose.orientation.x = feedback->pose.orientation.x;
-  pwc_gl.pose.orientation.y = feedback->pose.orientation.y;
-  pwc_gl.pose.orientation.z = feedback->pose.orientation.z;
-  pwc_gl.pose.orientation.w = feedback->pose.orientation.w;
-  // To display on console
-  wpg_utils.printDebugPose("CURRENT LOC", feedback->marker_name, pwc_gl);
+  pwc_gl.pose = feedback->pose;
+  wpg_utils.printDebugPose("CURRENT LOC", feedback->marker_name,
+                           pwc_gl); // To display on console
 }
 
 // Add waypoint
@@ -146,11 +141,9 @@ void waypointgen_marker::mnu_removeWaypoint(
     server_->erase(feedback->marker_name);
     server_->applyChanges();
 
-    // Decrement counter
-    --marker_count_;
+    --marker_count_; // Decrement counter
 
-    dispMsg.data = feedback->marker_name;
-    dispMsg.data += " removed!";
+    dispMsg.data = feedback->marker_name + " removed!";
   } else {
     dispMsg.data = "Cannot remove all points!";
   }
@@ -212,7 +205,7 @@ Create waypoint
 
 // Create Arrow
 visualization_msgs::Marker waypointgen_marker::makeArrow(unsigned char mrk_id) {
-  typedef visualization_msgs::Marker vmarker;
+  using vmarker = visualization_msgs::Marker;
   vmarker sp_marker;
   sp_marker.type = vmarker::ARROW;
   sp_marker.scale.x = 0.5;
@@ -235,13 +228,11 @@ MARKER CONTROLS
 void waypointgen_marker::setHeader(visualization_msgs::InteractiveMarker &imk_h,
                                    const int &index_h) {
   // Header
-  imk_h.header.frame_id = "map"; // Set frame relative to map frame
-  imk_h.header.stamp = ros::Time::now();
+  wpg_utils.update_header(imk_h.header,
+                          "map"); // Set frame relative to map frame
   // Name
-  imk_h.name = "waypoint_";
-  imk_h.name += std::to_string(index_h); // Add marker ID
-  imk_h.description = "Waypoint Marker ";
-  imk_h.description += std::to_string(index_h);
+  imk_h.name = "waypoint_" + std::to_string(index_h); // Add marker ID
+  imk_h.description = "Waypoint Marker " + std::to_string(index_h);
 }
 
 // Set InteractiveMarker position
@@ -286,10 +277,11 @@ void waypointgen_marker::addMovementControl(
     visualization_msgs::InteractiveMarkerControl &im_c, const bool &mw,
     const bool &mx, const bool &my, const bool &mz, const std::string &mName,
     const bool &mvAxis) {
-  im_c.orientation.w = mw;
   im_c.orientation.x = mx;
   im_c.orientation.y = my;
   im_c.orientation.z = mz;
+  im_c.orientation.w = mw;
+
   im_c.name = mName;
   // Set either translational or rotational
   im_c.interaction_mode =
@@ -349,8 +341,6 @@ void waypointgen_marker::addWaypointMarker(const unsigned int &mrk_id) {
 
   // Set Header
   setHeader(mrk, mrk_id);
-  // mrk = setPos(mrk,mrk_id%5 - 2,mrk_id%6 - 2);  //Vary spawn location
-
   setPos(mrk, lastMarker[0] + 1,
          lastMarker[1] + 1); // Set next marker close to previous one
 
@@ -369,26 +359,11 @@ void waypointgen_marker::addWaypointMarker(const unsigned int &mrk_id) {
                        boost::bind(&waypointgen_marker::updateWaypointPos, this,
                                    _1)); // Attach callback when user
                                          // updates the marker position
-
   menu_handler.apply(
       *server_, mrk.name); // Apply to int_marker.name, which is setpoint_marker
 
-  // Increment marker count tracker
-  ++marker_count_;
-
-  // Update map_server
-  server_->applyChanges();
+  ++marker_count_;         // Increment marker count tracker
+  server_->applyChanges(); // Update map_server
 }
 
 void waypointgen_marker::reset_server() { server_.reset(); }
-
-int main(int argc, char **argv) {
-  ros::init(argc, argv, "setpoint_marker");
-
-  ros::NodeHandle n;
-  waypointgen_marker wpm(n, true);
-
-  // start the ROS main loop
-  ros::spin();
-  wpm.reset_server();
-}
