@@ -1,6 +1,10 @@
-name: CI
+name: Notify
 
-on: [push, pull_request]
+on:
+  workflow_run:
+    workflows: ["ROS CI"]
+    types:
+      - completed
   
 jobs:
   build:
@@ -12,4 +16,4 @@ jobs:
         to: ${{ secrets.TELEGRAM_TO }}
         token: ${{ secrets.TELEGRAM_TOKEN }}
         message: |  #https://help.github.com/en/actions/reference/contexts-and-expression-syntax-for-github-actions#github-context
-          ${{ github.event_name }} commit in ${{ github.repository }} by "${{ github.actor }}". [${{github.sha}}@${{ github.ref }}]
+          ROS CI completed: ${{ github.event_name }} commit in ${{ github.repository }} by "${{ github.actor }}". [${{github.sha}}@${{ github.ref }}]
