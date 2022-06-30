@@ -3,8 +3,9 @@
 waypointgen_utils::waypointgen_utils(){};
 
 void waypointgen_utils::update_header(std_msgs::Header &hd,
-                                   const std::string &frameID) {
-  hd.frame_id = frameID; // reference frame
+                                      const std::string &frameID) {
+  if (!frameID.empty())
+    hd.frame_id = frameID; // reference frame
   hd.stamp = ros::Time::now();
 }
 
@@ -16,7 +17,22 @@ waypointgen_utils::addPoseCov(const geometry_msgs::Point &pt,
   quaternionTFToMsg(q_rotate, quat_msg);
 
   geometry_msgs::PoseWithCovariance cov_pose;
-  cov_pose.pose.position = pt;
+  auto isValidPoint{true};
+
+  if (pt.x != pt.x || pt.y != pt.y || pt.z != pt.z)
+    isValidPoint = 0;
+
+  geometry_msgs::Point fPoint;
+  if (!isValidPoint) {
+    //Return -1 if invalid num
+    geometry_msgs::Point tmp;
+    tmp.x = -1;
+    tmp.y = -1;
+    tmp.z = -1;
+    fPoint = tmp;
+  }
+
+  cov_pose.pose.position = isValidPoint ? pt : fPoint;
   cov_pose.pose.orientation = quat_msg;
   return cov_pose;
 }

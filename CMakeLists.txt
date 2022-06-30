@@ -82,3 +82,14 @@ install(
     TARGETS wpg_utils
     LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
 )
+
+
+# Unit testing
+if(CATKIN_ENABLE_TESTING)
+    find_package(rostest REQUIRED)
+    add_rostest_gtest(${PROJECT_NAME}_utest launch/utest.test test/utest.cpp)
+    target_link_libraries(${PROJECT_NAME}_utest
+    wpg_utils
+    ${catkin_LIBRARIES}
+    )
+endif()

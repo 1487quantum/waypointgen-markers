@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="2">
   <name>waypointgen</name>
-  <version>0.1.2</version>
+  <version>0.1.3</version>
   <description>The waypointgen package</description>
 
   <maintainer email="dev@cyaninfinite.com">1487quantum</maintainer>
@@ -38,5 +38,6 @@
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>yaml-cpp</exec_depend>
 
+  <test_depend>rosunit</test_depend>
 
 </package>

@@ -78,6 +78,19 @@ For example, triggering the playback after 3s.
 ```bash
 rosservice call /trigger_play 3
 ```
+## Unit Testing
+
+To run the unit test, ensure that the wayointgen package has been compiled previously.
+
+```bash
+catkin build waypointgen
+```
+
+After that, compile the test.
+
+```bash
+catkin test waypointgen
+```
 
 ## Changelog
 
@@ -99,3 +112,7 @@ rosservice call /trigger_play 3
 - Refactored code.
 - Removed custom msg.
 - Update launch files.
+
+### v0.1.3
+
+- Add unit tests & rostest for utils.

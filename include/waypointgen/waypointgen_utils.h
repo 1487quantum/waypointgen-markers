@@ -1,3 +1,5 @@
+#ifndef WAYPOINTGEN_UTILS_H
+#define WAYPOINTGEN_UTILS_H
 
 #include <geometry_msgs/Point.h>
 #include <geometry_msgs/PoseWithCovariance.h>
@@ -27,3 +29,5 @@ public:
 
   static constexpr double PI = 3.1415926535897932385;
 };
+
+#endif

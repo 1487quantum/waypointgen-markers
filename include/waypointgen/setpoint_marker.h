@@ -1,3 +1,6 @@
+#ifndef SETPOINT_MARKER_H
+#define SETPOINT_MARKER_H
+
 #include <boost/bind.hpp>
 #include <map>
 #include <ctime>
@@ -94,3 +97,5 @@ private:
   ros::NodeHandle nh_;
   std::shared_ptr<interactive_markers::InteractiveMarkerServer> server_;
 };
+
+#endif

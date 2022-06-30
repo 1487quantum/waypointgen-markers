@@ -1,3 +1,6 @@
+#ifndef SETPOINT_SERVER_H
+#define SETPOINT_SERVER_H
+
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -143,3 +146,5 @@ private:
       clock_type::now()};                  // Timer for benchmarking
   std::vector<bool> wpt_benchmark_success; // Benchmark vals
 };
+
+#endif
