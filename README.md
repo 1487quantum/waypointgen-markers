@@ -1,8 +1,6 @@
 # waypointgen
 
-[![ROS CI](https://img.shields.io/github/workflow/status/1487quantum/waypointgen/ROS%20CI?label=CI&logo=ros&style=for-the-badge)](https://github.com/1487quantum/waypointgen/actions/workflows/ros_ci.yml)
-
-
+[![ROS CI](https://img.shields.io/github/actions/workflow/status/quantumxt/waypointgen/ros_ci.yml?label=CI&logo=ros&style=for-the-badge)](https://github.com/quantumxt/waypointgen/actions/workflows/ros_ci.yml)
 
 A waypoint generator (using InteractiveMarkers in Rviz) and a waypoint server for waypoint playback. The waypoints are saved as a **YAML** file.
 
@@ -12,7 +10,7 @@ Git clone the ROS Package into the relevant workspace.
 
 ```bash
 cd ~/catkin_ws/src
-git clone https://github.com/1487quantum/waypointgen.git
+git clone https://github.com/quantumxt/waypointgen.git
 ```
 
 Compile the package.
